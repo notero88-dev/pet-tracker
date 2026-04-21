@@ -40,6 +40,16 @@ workflows:
       - name: Pod install
         script: |
           cd ios && pod install
+      - name: Debug xcconfig state
+        script: |
+          echo "=== Debug.xcconfig ==="
+          cat ios/Flutter/Debug.xcconfig
+          echo "=== Pods-Runner.debug.xcconfig exists? ==="
+          ls -la "ios/Pods/Target Support Files/Pods-Runner/" || echo "DIR MISSING"
+          echo "=== Pods-Runner.debug.xcconfig content (first 30 lines) ==="
+          head -30 "ios/Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig" || echo "FILE MISSING"
+          echo "=== Search for mobile_scanner in xcconfigs ==="
+          grep -r "mobile_scanner" "ios/Pods/Target Support Files/" 2>/dev/null | head -10
       - name: Build iOS app for simulator (no signing)
         script: |
           flutter build ios --debug --simulator --no-codesign
