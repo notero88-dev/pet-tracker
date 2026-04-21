@@ -1,0 +1,135 @@
+# Codemagic CI pipeline for PetTrack.
+#
+# See README_CODEMAGIC.md for step-by-step setup instructions (how to connect the
+# repo, how to generate App Store Connect API keys, how to redeem TestFlight builds).
+#
+# Why macOS 14.2 / Xcode 15.1 (Sonoma): Nicolás's local Mac runs Sequoia 15.5, which
+# has a codesign bug around the com.apple.provenance xattr (see SEQUOIA_XATTR_FIX.md).
+# Codemagic's Sonoma image sidesteps that bug entirely — no patches needed.
+#
+# No `triggering:` sections yet — all builds are manual. Wire up branch triggers
+# once the pipeline has produced at least one green TestFlight build.
+
+workflows:
+
+  # -----------------------------------------------------------------------
+  # ios-simulator-debug
+  #
+  # Moment-of-truth sanity check. No Apple Developer credentials required.
+  # Builds the app for iOS Simulator with codesigning disabled. If this passes,
+  # the Flutter code + CocoaPods setup is clean on Codemagic and we can move on
+  # to the signed TestFlight workflow below.
+  # -----------------------------------------------------------------------
+  ios-simulator-debug:
+    name: iOS Simulator Debug
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      flutter: 3.41.3
+      xcode: 15.1
+      cocoapods: default
+    scripts:
+      - name: Flutter pub get
+        script: |
+          flutter pub get
+      - name: Pod install
+        script: |
+          cd ios && pod install
+      - name: Build iOS app for simulator (no signing)
+        script: |
+          flutter build ios --debug --simulator --no-codesign
+    artifacts:
+      - build/ios/iphonesimulator/Runner.app
+      - flutter_drive.log
+
+  # -----------------------------------------------------------------------
+  # ios-testflight
+  #
+  # Signed Release IPA, uploaded to TestFlight. Requires one-time setup in
+  # the Codemagic UI — see README_CODEMAGIC.md section "App Store Connect API key"
+  # before running this workflow for the first time.
+  # -----------------------------------------------------------------------
+  ios-testflight:
+    name: iOS TestFlight
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    integrations:
+      # Name of the integration you configured in Codemagic UI:
+      # Team settings -> Integrations -> App Store Connect -> "codemagic"
+      app_store_connect: codemagic
+    environment:
+      flutter: 3.41.3
+      xcode: 15.1
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        # Bundle ID matches ios/Runner.xcodeproj/project.pbxproj
+        bundle_identifier: co.pettrack.pettrackApp
+      vars:
+        # ⚠️ FILL IN AFTER CREATING THE APP IN APP STORE CONNECT.
+        # This is the numeric "Apple ID" shown on the app's App Information page
+        # (NOT your personal Apple ID email). It's used to look up the latest
+        # TestFlight build number so we can auto-increment.
+        # Until you have it, the build-number line below falls back to the
+        # CI build number which also works.
+        APP_STORE_APPLE_ID: ""
+    scripts:
+      - name: Set up code signing settings on Xcode project
+        script: |
+          xcode-project use-profiles
+      - name: Flutter pub get
+        script: |
+          flutter pub get
+      - name: Pod install
+        script: |
+          cd ios && pod install
+      - name: Build signed IPA
+        script: |
+          # Auto-increment build number from the latest TestFlight build, if we have
+          # APP_STORE_APPLE_ID set. Otherwise use Codemagic's build counter ($BUILD_NUMBER).
+          if [ -n "$APP_STORE_APPLE_ID" ]; then
+            BUILD_NUM=$(($(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID") + 1))
+          else
+            BUILD_NUM="$BUILD_NUMBER"
+          fi
+          flutter build ipa --release \
+            --build-name=1.0.0 \
+            --build-number="$BUILD_NUM" \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # Add beta_groups here once you've created internal/external tester groups
+        # in App Store Connect. Leave commented until then — uploading to TestFlight
+        # without a group is fine; you just have to invite testers manually.
+        # beta_groups:
+        #   - Internal
+        submit_to_app_store: false
+
+  # -----------------------------------------------------------------------
+  # android-debug
+  #
+  # Cheaper Linux runner. Useful for smoke-testing Android builds in CI even
+  # though daily Android iteration happens locally on the emulator.
+  # -----------------------------------------------------------------------
+  android-debug:
+    name: Android Debug
+    max_build_duration: 60
+    instance_type: linux_x2
+    environment:
+      flutter: 3.41.3
+    scripts:
+      - name: Flutter pub get
+        script: |
+          flutter pub get
+      - name: Build Android debug APK
+        script: |
+          flutter build apk --debug
+    artifacts:
+      - build/app/outputs/flutter-apk/app-debug.apk
+      - flutter_drive.log
