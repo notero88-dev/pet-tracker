@@ -1,5 +1,32 @@
 # macOS Sequoia xattr Codesign Fix
 
+## ⚠️ WARNING — DO NOT LOCALLY ARCHIVE FOR TESTFLIGHT / APP STORE FROM THIS MACHINE
+
+These patches make **Debug and Profile** iOS builds work around Sequoia's `com.apple.provenance` codesign bug. They are explicitly **scoped to skip Release configuration** (see `ios/Podfile` — the `next if config.name == 'Release'` guard).
+
+**If you ever need a signed Release IPA for TestFlight or App Store submission:**
+
+1. **Do not try to `flutter build ipa --release` on this Mac.** The Sequoia xattr issue prevents the main app binary from being signed correctly, and App Store Connect will reject (or silently produce) a broken archive.
+2. **An earlier version of this Podfile unconditionally disabled Pod codesigning across all configurations.** That would have passed locally but failed App Store validation with "bundle format is ambiguous" / "invalid signature" errors. This was fixed to only disable Debug/Profile. Don't regress it.
+3. **Release builds must run on Codemagic** — see `codemagic.yaml` and `README_CODEMAGIC.md`. The `ios-testflight` workflow runs on a macOS Sonoma 14.2 / Xcode 15.1 runner that doesn't have the Sequoia bug, so it signs cleanly with no patches.
+
+### The trap to avoid
+
+```ruby
+# WRONG — signs nothing, App Store rejects:
+target.build_configurations.each do |config|
+  config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'   # applies to Release too!
+end
+
+# CORRECT — leaves Release signing alone, lets Codemagic do the signed build:
+target.build_configurations.each do |config|
+  next if config.name == 'Release'
+  config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+end
+```
+
+---
+
 ## Problem
 
 On **macOS Sequoia 15.5** with **Xcode 16.4** + **Flutter 3.41.3**, iOS builds fail with:
@@ -119,7 +146,8 @@ This patch is self-healing: every `pod install` re-applies the xattr strip to th
 
 - Flutter's internal `install_code_assets` codesign: ✅ patched (SDK + xcode_backend wrap)
 - CocoaPods `Pods-Runner-frameworks.sh` embed-time codesign: ✅ patched via post_install
-- Xcode's internal Pods framework codesign (simulator): ✅ disabled via `CODE_SIGNING_ALLOWED=NO`
+- Xcode's internal Pods framework codesign (Debug + Profile only): ✅ disabled via `CODE_SIGNING_ALLOWED=NO`
+- Xcode's internal Pods framework codesign (Release): ⚠️ **left ON intentionally** — use Codemagic for Release
 - Xcode's final `Runner.app` codesign on device: ⚠️ **not yet reached** — local device builds still blocked in practice because we stopped before finishing an end-to-end run
 
 ## Known limitations
