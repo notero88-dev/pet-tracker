@@ -111,25 +111,3 @@ workflows:
         #   - Internal
         submit_to_app_store: false
 
-  # -----------------------------------------------------------------------
-  # android-debug
-  #
-  # Cheaper Linux runner. Useful for smoke-testing Android builds in CI even
-  # though daily Android iteration happens locally on the emulator.
-  # -----------------------------------------------------------------------
-  android-debug:
-    name: Android Debug
-    max_build_duration: 60
-    instance_type: linux_x2
-    environment:
-      flutter: 3.41.3
-    scripts:
-      - name: Flutter pub get
-        script: |
-          flutter pub get
-      - name: Build Android debug APK
-        script: |
-          flutter build apk --debug
-    artifacts:
-      - build/app/outputs/flutter-apk/app-debug.apk
-      - flutter_drive.log
