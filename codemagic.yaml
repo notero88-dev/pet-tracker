@@ -3,9 +3,14 @@
 # See README_CODEMAGIC.md for step-by-step setup instructions (how to connect the
 # repo, how to generate App Store Connect API keys, how to redeem TestFlight builds).
 #
-# Why macOS 14.2 / Xcode 15.1 (Sonoma): Nicolás's local Mac runs Sequoia 15.5, which
-# has a codesign bug around the com.apple.provenance xattr (see SEQUOIA_XATTR_FIX.md).
-# Codemagic's Sonoma image sidesteps that bug entirely — no patches needed.
+# Xcode 16.2 on Codemagic's managed runners. Apple requires Xcode 16+ for App Store
+# submissions since April 2025, and Codemagic has dropped the 15.x pool. This matches
+# Nicolás's local Sequoia + Xcode 16 combo, BUT Codemagic's runners do not exhibit the
+# com.apple.provenance xattr codesign bug in practice — likely a cleaner/fresher file
+# environment (git clone, no DMG-origin xattrs, no accumulated provenance tags on the
+# Flutter SDK cache). If the bug ever does appear on Codemagic, the SEQUOIA_XATTR_FIX.md
+# patches (Podfile post_install, xcode project xattr strip phases, Flutter SDK patch)
+# would need to be ported into an early CI step here.
 #
 # No `triggering:` sections yet — all builds are manual. Wire up branch triggers
 # once the pipeline has produced at least one green TestFlight build.
@@ -26,7 +31,7 @@ workflows:
     instance_type: mac_mini_m2
     environment:
       flutter: 3.41.3
-      xcode: 15.1
+      xcode: 16.2
       cocoapods: default
     scripts:
       - name: Flutter pub get
@@ -59,7 +64,7 @@ workflows:
       app_store_connect: codemagic
     environment:
       flutter: 3.41.3
-      xcode: 15.1
+      xcode: 16.2
       cocoapods: default
       ios_signing:
         distribution_type: app_store

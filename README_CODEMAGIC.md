@@ -2,7 +2,7 @@
 
 This guide walks through connecting this repo to Codemagic and running your first iOS builds — first the unsigned simulator build (moment-of-truth), then the signed TestFlight build.
 
-**Why Codemagic?** Local iOS builds on this Mac are blocked by a macOS Sequoia 15.5 codesign bug (`com.apple.provenance` xattr — see `SEQUOIA_XATTR_FIX.md`). Codemagic's Sonoma runners don't have that bug, so we build iOS there and use TestFlight for device testing.
+**Why Codemagic?** Local iOS builds on this Mac are blocked by a macOS Sequoia 15.5 codesign bug (`com.apple.provenance` xattr — see `SEQUOIA_XATTR_FIX.md`). Codemagic's managed Xcode 16.x runners don't exhibit that bug in practice (cleaner file environment, no accumulated provenance tags), so we build iOS there and use TestFlight for device testing.
 
 ---
 
@@ -153,7 +153,7 @@ If you want other people (co-founder, testers) to install, in App Store Connect 
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `No valid Xcode version found` | Codemagic deprecated Xcode 15.1 | Update `xcode:` in `codemagic.yaml` to the next most recent Sonoma-era Xcode (check [Codemagic Xcode docs](https://docs.codemagic.io/specs/versions-macos/)). |
+| `Unsupported Xcode version` / `No valid Xcode version found` | Codemagic deprecated the current 16.x minor | Update `xcode:` in `codemagic.yaml` to another Xcode 16.x option (16.0, 16.1, 16.3, 16.4) — check [Codemagic Xcode docs](https://docs.codemagic.io/specs/versions-macos/) for what's currently supported. Xcode 15.x is no longer available (Apple requires 16+ for App Store submissions since April 2025). |
 | `flutter: command not found` | Version string wrong | Check `flutter: 3.41.3` is still available. `flutter: stable` is a safe fallback. |
 | `pod install` hangs | CocoaPods CDN flake | Re-run the build. If it keeps failing, add `pod repo update` before `pod install` in the script. |
 | Build succeeds but artifact missing | Simulator build produces `.app`, not `.ipa` — that's expected | Not a failure. The `build/ios/iphonesimulator/Runner.app` artifact is what you want. |
@@ -183,5 +183,5 @@ If you want other people (co-founder, testers) to install, in App Store Connect 
 ## Maintenance notes
 
 - `codemagic.yaml` is checked into git. Any change you make in the Codemagic Web UI that's not reflected in the YAML will be **overwritten** on the next push. Treat the YAML as the source of truth.
-- When Codemagic deprecates Xcode 15.1 (they will eventually), you'll need to move to Xcode 16.x on Sequoia. At that point, the same xattr bug we hit locally may or may not appear on Codemagic — it hasn't so far in practice. If it does, bring the SDK + Podfile patches from `SEQUOIA_XATTR_FIX.md` onto CI by adding an early `xattr -cr .` step to the iOS workflows.
-- The Flutter SDK patch (`native_assets_host.dart`) is **not in the repo** — it lives in the Flutter SDK install. Codemagic runs a fresh Flutter install on each build, so the patch doesn't travel. That's fine because Sonoma doesn't need it.
+- We run Xcode 16.x on Codemagic's Sequoia-based runners. Despite this matching Nicolás's local broken combo, Codemagic hasn't exhibited the `com.apple.provenance` xattr bug in practice — likely a cleaner build environment (fresh git clone, no DMG-origin xattrs, no accumulated provenance tags on the Flutter SDK cache). If the bug ever does appear on CI, port the patches from `SEQUOIA_XATTR_FIX.md` — start with an early `xattr -cr .` and `xattr -cr ~/.pub-cache` step at the top of the iOS workflows' scripts.
+- The Flutter SDK patch (`native_assets_host.dart`) is **not in the repo** — it lives in the Flutter SDK install. Codemagic runs a fresh Flutter install on each build, so the patch doesn't travel. That's fine because CI hasn't needed it.
