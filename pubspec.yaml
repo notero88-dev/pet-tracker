@@ -30,7 +30,7 @@ dependencies:
   web_socket_channel: ^3.0.1
   
   # QR Code
-  mobile_scanner: ^6.0.0
+  mobile_scanner: ^7.2.0
   
   # Image Picker
   image_picker: ^1.1.2
