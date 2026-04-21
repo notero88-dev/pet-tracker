@@ -65,14 +65,9 @@ workflows:
         distribution_type: app_store
         # Bundle ID matches ios/Runner.xcodeproj/project.pbxproj
         bundle_identifier: co.pettrack.pettrackApp
-      vars:
-        # ⚠️ FILL IN AFTER CREATING THE APP IN APP STORE CONNECT.
-        # This is the numeric "Apple ID" shown on the app's App Information page
-        # (NOT your personal Apple ID email). It's used to look up the latest
-        # TestFlight build number so we can auto-increment.
-        # Until you have it, the build-number line below falls back to the
-        # CI build number which also works.
-        APP_STORE_APPLE_ID: ""
+      # NOTE: APP_STORE_APPLE_ID is set in the Codemagic UI (dashboard → app →
+      # Environment variables), NOT in this file. See README_CODEMAGIC.md § 3.4.
+      # Until it's set, the build script below falls through to $BUILD_NUMBER.
     scripts:
       - name: Set up code signing settings on Xcode project
         script: |

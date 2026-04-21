@@ -107,31 +107,20 @@ Apple's canonical docs for this: [Creating API Keys for App Store Connect API](h
 
 Codemagic will validate the key by pinging App Store Connect — you'll see a green check if it worked.
 
-### 3.4 Fill in `APP_STORE_APPLE_ID` in `codemagic.yaml`
+### 3.4 Set `APP_STORE_APPLE_ID` as an environment variable in Codemagic
 
-Open `codemagic.yaml`, find this block:
+Codemagic rejects empty-string env vars in committed YAML, so this value lives in the Codemagic UI instead. That's the cleaner path anyway — values that may change (or differ per environment) don't belong in committed YAML.
 
-```yaml
-vars:
-  APP_STORE_APPLE_ID: ""
-```
+1. Codemagic dashboard → open the **PetTrack** app.
+2. Click the **Environment variables** tab (in the sidebar or the app's settings).
+3. Click **Add variable** and fill in:
+   - **Variable name:** `APP_STORE_APPLE_ID`
+   - **Variable value:** the 10-digit Apple ID you copied in step 3.1 (e.g. `6449123456`)
+   - **Variable group:** leave default, or create a new group called `testflight` if you want to reuse it across workflows
+   - **Secure:** unchecked (it's not a secret — it's a public app identifier)
+4. Click **Add**.
 
-Paste the 10-digit Apple ID you copied in step 3.1:
-
-```yaml
-vars:
-  APP_STORE_APPLE_ID: "6449123456"
-```
-
-Commit and push:
-
-```bash
-git add codemagic.yaml
-git commit -m "Set APP_STORE_APPLE_ID for TestFlight auto-increment"
-git push
-```
-
-(You can technically set this as an environment variable in the Codemagic UI instead of in YAML — both work. YAML is more transparent for a solo-dev setup.)
+The `ios-testflight` workflow will now pick it up automatically. If you skip this step, the build still works — it falls back to Codemagic's `$BUILD_NUMBER` for the build number instead of auto-incrementing from TestFlight. You can add the var later without changing any code.
 
 ---
 
