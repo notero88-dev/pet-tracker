@@ -18,25 +18,13 @@ class TraccarApi {
   final String baseUrl = AppConstants.traccarApiUrl;
   String? _authHeader;
 
-  /// Login to Traccar by verifying credentials via Basic auth on GET /session.
-  /// Stores the Basic auth value for subsequent requests.
+  /// Store Basic auth header for subsequent requests.
+  /// Note: Traccar 6.x returns 404 on GET /api/session, so we can't use that
+  /// endpoint to verify credentials. Instead we just store the header — bad
+  /// credentials will surface as 401 on the first real API call (e.g. getDevices).
   Future<bool> login(String email, String password) async {
-    try {
-      _authHeader = 'Basic ${base64Encode(utf8.encode('$email:$password'))}';
-      final response = await http.get(
-        Uri.parse('$baseUrl/session'),
-        headers: {'Authorization': _authHeader!},
-      );
-      if (response.statusCode == 200) {
-        return true;
-      }
-      _authHeader = null;
-      return false;
-    } catch (e) {
-      print('Traccar login error: $e');
-      _authHeader = null;
-      return false;
-    }
+    _authHeader = 'Basic ${base64Encode(utf8.encode('$email:$password'))}';
+    return true;
   }
 
   /// Get headers with Basic auth
