@@ -5,45 +5,48 @@ import '../models/device.dart';
 import '../models/position.dart';
 
 /// Client for Traccar REST API
-/// 
+///
 /// Note: In production, most of these calls should go through our backend proxy
-/// for security. For MVP, we're accessing Traccar directly with session auth.
+/// for security. For MVP, we're accessing Traccar directly.
+///
+/// We use **HTTP Basic auth** (Authorization header) instead of session cookies.
+/// Why: on Flutter web, browsers hide `Set-Cookie` from JavaScript (security
+/// policy) and won't forward cross-origin cookies without `withCredentials=true`
+/// + matching CORS on Traccar. Basic auth sidesteps all of that and works
+/// identically on iOS/Android/web. See docs/STATUS_2026-04-22.md.
 class TraccarApi {
   final String baseUrl = AppConstants.traccarApiUrl;
-  String? _sessionCookie;
+  String? _authHeader;
 
-  /// Login to Traccar and get session cookie
+  /// Login to Traccar by verifying credentials via Basic auth on GET /session.
+  /// Stores the Basic auth value for subsequent requests.
   Future<bool> login(String email, String password) async {
     try {
-      final response = await http.post(
+      _authHeader = 'Basic ${base64Encode(utf8.encode('$email:$password'))}';
+      final response = await http.get(
         Uri.parse('$baseUrl/session'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'email=$email&password=$password',
+        headers: {'Authorization': _authHeader!},
       );
-
       if (response.statusCode == 200) {
-        // Extract session cookie
-        final cookies = response.headers['set-cookie'];
-        if (cookies != null) {
-          _sessionCookie = cookies.split(';')[0];
-          return true;
-        }
+        return true;
       }
+      _authHeader = null;
       return false;
     } catch (e) {
       print('Traccar login error: $e');
+      _authHeader = null;
       return false;
     }
   }
 
-  /// Get headers with session cookie
+  /// Get headers with Basic auth
   Map<String, String> get _headers {
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    if (_sessionCookie != null) {
-      headers['Cookie'] = _sessionCookie!;
+    if (_authHeader != null) {
+      headers['Authorization'] = _authHeader!;
     }
     return headers;
   }
@@ -272,6 +275,6 @@ class TraccarApi {
     } catch (e) {
       print('Logout error: $e');
     }
-    _sessionCookie = null;
+    _authHeader = null;
   }
 }
