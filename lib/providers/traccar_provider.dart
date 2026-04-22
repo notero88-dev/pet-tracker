@@ -178,7 +178,17 @@ class TraccarProvider with ChangeNotifier {
         petName: petName,
         petType: petType,
       );
-      
+
+      // Log into Traccar with the credentials just returned by the provisioning
+      // API so that subsequent calls (refreshDevices, WebSocket, etc.) carry the
+      // Basic auth header. Without this, every Traccar call returns 401.
+      // Note: idempotent 200 responses do NOT return credentials; in that case
+      // we fall back to whatever credentials the app already has stored.
+      final creds = _provisioningApi.getLastProvisionedCredentials();
+      if (creds != null && creds['email'] != null && creds['password'] != null) {
+        await _api.login(creds['email'], creds['password']);
+      }
+
       await refreshDevices(); // Reload device list
       
       _isLoading = false;
