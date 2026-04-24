@@ -1,8 +1,44 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Permissions ============================================================
+         INTERNET is auto-injected by the Flutter tool, so it's not declared
+         here, but the rest must be explicit:
+
+         ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION — required by the
+             `location: ^7.0.0` plugin used in lib/services/. The app shows
+             the user's own position on the map alongside the pet, and the
+             plugin will throw at runtime without these.
+
+         POST_NOTIFICATIONS — required on Android 13+ (API 33+) for FCM push
+             notifications to be delivered. Without it, FCM silently fails on
+             newer devices and we never get geofence-leave / battery-low alerts
+             through to the user.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
-        android:label="pettrack_app"
+        android:label="PetTrack"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+
+        <!-- Google Maps SDK for Android API key.
+             Required by the `google_maps_flutter: ^2.10.0` plugin. Without
+             this meta-data the map renders as a blank gray box at runtime —
+             no error, just a silent failure. The key below is the project's
+             Firebase Android key (from google-services.json); if Maps stops
+             rendering, verify "Maps SDK for Android" is enabled in the
+             Google Cloud Console for that key, and that the key's API
+             restrictions include it.
+
+             If you ever need a separate Android Maps key, generate one in
+             Cloud Console (APIs & Services → Credentials) and replace the
+             value below — DO NOT remove this meta-data tag entirely. -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyCSAgHYzg74m6TNEx0Zw8NX7wb1IwGvkh0"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

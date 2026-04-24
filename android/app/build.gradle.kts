@@ -3,6 +3,8 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Processes google-services.json (must come AFTER the Android plugin).
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -20,10 +22,20 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "co.pettrack.pettrack_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        // applicationId is the install-time identity (Play Store + Firebase
+        // verification). It MUST match the package_name registered in
+        // google-services.json — Firebase will refuse to initialize otherwise.
+        // Canonical PetTrack bundle is `co.pettrack.app` across iOS + Android.
+        //
+        // NOTE: `namespace` (above) is intentionally different (kept as
+        // `co.pettrack.pettrack_app` to match MainActivity.kt's package on
+        // disk). AGP 8+ separates the two cleanly:
+        //   namespace     = where R.java is generated / Kotlin source root
+        //   applicationId = the app's identity in the world
+        // If you want to consolidate them later, rename the
+        // android/app/src/main/kotlin/co/pettrack/pettrack_app/ directory
+        // and update the `package` line in MainActivity.kt to match.
+        applicationId = "co.pettrack.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
