@@ -19,9 +19,16 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyCSAgHYzg74m6TNEx0Zw8NX7wb1IwGvkh0',
-    appId: '1:487348630652:web:pettrackcolombiawebapp',
+    // Real Firebase-generated App ID (fetched from Firebase Console →
+    // Project Settings → General → Your apps → pettrack-web). The previous
+    // value "pettrackcolombiawebapp" was a hand-written placeholder that
+    // broke Firebase JS SDK init on web, surfacing as cloud_firestore/unavailable.
+    appId: '1:487348630652:web:235441c835ccfa0f3905f9',
     messagingSenderId: '487348630652',
     projectId: 'pettrack-colombia',
+    // authDomain is required for Firebase Auth + Firestore to work on web.
+    // Default format: <projectId>.firebaseapp.com.
+    authDomain: 'pettrack-colombia.firebaseapp.com',
     storageBucket: 'pettrack-colombia.firebasestorage.app',
   );
 
