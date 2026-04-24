@@ -1,14 +1,31 @@
-// Thin HTTP client for the device command endpoints we added to
-// provisioning-api in Task A. The provisioning-api, in turn, forwards these
-// to the mictrack-gateway which writes to the MT710's TCP socket.
+// Thin HTTP client for the device command endpoints exposed by
+// provisioning-api. The app is **intentionally agnostic** about how those
+// commands actually reach the MT710 — that decision lives in the backend.
+//
+// As of April 2026 the backend default transport is SMS via Hologram (see
+// pettrack-backend/docs/COMMAND-TRANSPORT.md). When Hologram enables Cat-M1
+// roaming on Movistar Colombia, the backend will switch to direct TCP
+// downlink via the mictrack-gateway socket — and this file will not need
+// to change.
+//
+// PLEASE DO NOT add ?via=sms or ?via=tcp here. The whole point of the
+// server-side transport selection is that the app never knows. If you find
+// yourself wanting to branch on transport, read COMMAND-TRANSPORT.md first
+// and consider whether a backend change is the right answer instead.
 //
 // All methods return a typed result. Expected HTTP codes:
-//   200        command succeeded, device replied OK
+//   200        command succeeded (TCP: device replied OK; SMS: queued at Hologram)
 //   400        our payload is malformed
-//   503        device is not currently connected to the gateway
-//   504        command timed out waiting for device reply
-//   502        device explicitly rejected the command (returned FS)
+//   503        device is not currently connected (TCP path) / no IMEI mapping (SMS path)
+//   504        command timed out waiting for device reply (TCP path only)
+//   502        device explicitly rejected the command (returned FS) (TCP path only)
 //   500 / 5xx  upstream failure
+//
+// On 200 the response body is { success: true, reply: {...} }. The shape of
+// `reply` differs slightly between transports — see COMMAND-TRANSPORT.md
+// section "What the Flutter app sees" — but both are safe to treat as
+// "command accepted." For SMS the device-side confirmation lands later
+// (future work: Hologram inbound webhook, Option B).
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
