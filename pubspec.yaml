@@ -39,6 +39,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   intl: ^0.20.1
   flutter_svg: ^2.0.14
+  # Petti design system — Inter + Space Grotesk
+  google_fonts: ^6.2.1
   
   # Utils
   shared_preferences: ^2.3.4

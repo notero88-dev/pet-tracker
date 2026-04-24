@@ -9,6 +9,7 @@ import '../../utils/constants.dart';
 import '../../widgets/position_history_viewer.dart';
 import '../../widgets/device_commands_sheet.dart';
 import '../geofence/geofence_list_screen.dart';
+import 'device_settings_screen.dart';
 
 /// Device detail screen with live map
 class DeviceDetailScreen extends StatefulWidget {
@@ -271,6 +272,27 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                     IconButton(
                       icon: const Icon(Icons.refresh),
                       onPressed: _refreshPosition,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.settings_outlined),
+                      tooltip: 'Ajustes del dispositivo',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => DeviceSettingsScreen(
+                              device: widget.device,
+                              petName: widget.device.name,
+                              isOnline: _currentPosition != null,
+                              lastSeen: _currentPosition?.deviceTime,
+                              batteryPercent:
+                                  _currentPosition?.attributes?['batteryLevel']
+                                          as int? ??
+                                      80,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

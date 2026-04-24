@@ -58,3 +58,10 @@ ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
 
 # OS
 .DS_Store
+
+# iCloud sync duplicates — macOS aggressively creates "File 2.ext", "File 3.ext"
+# copies of anything in an iCloud-synced folder. Block them all.
+**/* 2.*
+**/* 3.*
+**/* 2
+**/* 3

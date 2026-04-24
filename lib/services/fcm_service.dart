@@ -9,6 +9,14 @@ class FCMService {
 
   /// Initialize FCM and request permissions
   Future<void> initialize() async {
+    // FCM on web requires a firebase-messaging-sw.js service worker and a VAPID
+    // key, neither of which this project has configured. Without them, getToken()
+    // hangs indefinitely. Skip FCM on web — push notifications only target
+    // iOS/Android in production anyway.
+    if (kIsWeb) {
+      debugPrint('FCM: skipping initialization on web (no service worker configured)');
+      return;
+    }
     try {
       // Request permission (iOS)
       NotificationSettings settings = await _messaging.requestPermission(

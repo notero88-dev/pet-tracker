@@ -36,14 +36,22 @@ class ProvisioningApi {
     required String userEmail,
     required String petName,
     required String petType,
+    String? phone,
   }) async {
     try {
+      // Backend validation rejects empty/missing phone. If the user didn't
+      // provide one, send a placeholder so provisioning succeeds; they can
+      // update it later from the profile screen.
+      final phoneToSend = (phone != null && phone.isNotEmpty)
+          ? phone
+          : '+573000000000';
+
       final response = await http.post(
         Uri.parse('$baseUrl/provision'),
         headers: _headers,
         body: jsonEncode({
           'email': userEmail,
-          'phone': '', // Optional phone number
+          'phone': phoneToSend,
           'deviceImei': imei,
           'petName': petName,
         }),
