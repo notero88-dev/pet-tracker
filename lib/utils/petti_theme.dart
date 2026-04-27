@@ -1,9 +1,11 @@
-// Petti Design System — tokens + typography helpers
+// Petti Design System — tokens + typography + global ThemeData
 //
-// Scope-contained. This does NOT replace AppTheme globally. New Petti-branded
-// screens (Device Settings, Zona Segura wizard) reference these tokens
-// directly. When we're ready to re-skin the whole app, we can swap
-// AppTheme.lightTheme to pull from here.
+// As of 2026-04-27 this IS the global app theme. `main.dart` plugs
+// `PettiTheme.lightTheme` into `MaterialApp.theme`, which means every
+// Material widget (TextField, ElevatedButton, AppBar, Scaffold, …)
+// inherits Petti colors and Inter/Space-Grotesk typography by default.
+// Per-screen code can still reference PettiColors / PettiText directly
+// for one-off accents.
 //
 // Colors, typography, and spacing match the Figma/React prototype delivered
 // 2026-04-23 (see Downloads/Petti - First design App V1/).
@@ -210,4 +212,258 @@ class PettiText {
         color: PettiColors.midnight,
         fontFeatures: const [FontFeature.tabularFigures()],
       );
+}
+
+/// Global ThemeData. Plug into `MaterialApp.theme` so every Material widget
+/// inherits Petti colors/type without per-screen overrides.
+///
+/// The intent is "Material 3 widgets, Petti tokens" — we use M3 as the
+/// scaffolding (TextField, ElevatedButton, AppBar, etc.) but every visible
+/// surface, color, and font is from the Petti system.
+class PettiTheme {
+  /// Light theme (the only one we ship today; dark mode is future work).
+  static ThemeData get lightTheme {
+    final colorScheme = ColorScheme(
+      brightness: Brightness.light,
+      primary: PettiColors.marigold,
+      onPrimary: PettiColors.midnight,
+      primaryContainer: PettiColors.marigoldSoft,
+      onPrimaryContainer: PettiColors.midnight,
+      secondary: PettiColors.sabana,
+      onSecondary: Colors.white,
+      secondaryContainer: PettiColors.sabanaSoft,
+      onSecondaryContainer: PettiColors.sabana,
+      tertiary: PettiColors.duskRose,
+      onTertiary: Colors.white,
+      tertiaryContainer: PettiColors.duskSoft,
+      onTertiaryContainer: PettiColors.cafe,
+      error: PettiColors.alert,
+      onError: Colors.white,
+      errorContainer: PettiColors.alertSoft,
+      onErrorContainer: PettiColors.alert,
+      surface: PettiColors.cloud,
+      onSurface: PettiColors.fgStrong,
+      surfaceContainerHighest: PettiColors.sand,
+      onSurfaceVariant: PettiColors.fg,
+      outline: PettiColors.borderLightStrong,
+      outlineVariant: PettiColors.fog,
+      shadow: PettiColors.midnight,
+      scrim: PettiColors.midnight,
+      inverseSurface: PettiColors.midnight,
+      onInverseSurface: PettiColors.cloud,
+      inversePrimary: PettiColors.marigoldBright,
+    );
+
+    // Material's TextTheme. Sized to match Petti's scale; widgets that pull
+    // from Theme.of(context).textTheme.* now get Inter/Space Grotesk for free.
+    final textTheme = TextTheme(
+      displayLarge: PettiText.displayXL(),
+      displayMedium: PettiText.display(),
+      displaySmall: PettiText.h1(),
+      headlineLarge: PettiText.h1(),
+      headlineMedium: PettiText.h2(),
+      headlineSmall: PettiText.h3(),
+      titleLarge: PettiText.h3(),
+      titleMedium: PettiText.h4(),
+      titleSmall: PettiText.bodyStrong(),
+      bodyLarge: PettiText.lead(),
+      bodyMedium: PettiText.body(),
+      bodySmall: PettiText.bodySm(),
+      labelLarge: PettiText.bodyStrong(),
+      labelMedium: PettiText.label(),
+      labelSmall: PettiText.meta(),
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+      textTheme: textTheme,
+      scaffoldBackgroundColor: PettiColors.cloud,
+      canvasColor: PettiColors.cloud,
+      dividerColor: PettiColors.fog,
+      dividerTheme: const DividerThemeData(
+        color: PettiColors.fog,
+        thickness: 1,
+        space: 1,
+      ),
+
+      // App bars — quiet, surface-tinted, matches the screens that use them.
+      appBarTheme: AppBarTheme(
+        backgroundColor: PettiColors.cloud,
+        foregroundColor: PettiColors.fgStrong,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+        titleTextStyle: PettiText.h3(),
+        iconTheme: const IconThemeData(color: PettiColors.fgStrong, size: 24),
+      ),
+
+      // Bottom nav (used in home_screen.dart). Marigold for selected.
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
+        backgroundColor: PettiColors.cloud,
+        selectedItemColor: PettiColors.midnight,
+        unselectedItemColor: PettiColors.trail,
+        selectedLabelStyle: PettiText.label().copyWith(
+          fontWeight: FontWeight.w600,
+          color: PettiColors.midnight,
+        ),
+        unselectedLabelStyle: PettiText.label(),
+        type: BottomNavigationBarType.fixed,
+        elevation: 0,
+      ),
+
+      // Primary CTA button — Marigold + Midnight. Matches PettiCta in
+      // widgets/petti/petti_primitives.dart so screens using either look the
+      // same.
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: PettiColors.marigold,
+          foregroundColor: PettiColors.midnight,
+          disabledBackgroundColor: PettiColors.n200,
+          disabledForegroundColor: PettiColors.fgFaint,
+          textStyle: PettiText.bodyStrong().copyWith(fontSize: 16),
+          padding: const EdgeInsets.symmetric(
+            horizontal: PettiSpacing.s5,
+            vertical: PettiSpacing.s4,
+          ),
+          minimumSize: const Size(0, 52),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(PettiRadii.md),
+          ),
+        ),
+      ),
+
+      // Secondary / outlined CTA — Midnight outline on Cloud.
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: PettiColors.midnight,
+          side: const BorderSide(color: PettiColors.midnight, width: 1.5),
+          textStyle: PettiText.bodyStrong().copyWith(fontSize: 16),
+          padding: const EdgeInsets.symmetric(
+            horizontal: PettiSpacing.s5,
+            vertical: PettiSpacing.s4,
+          ),
+          minimumSize: const Size(0, 52),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(PettiRadii.md),
+          ),
+        ),
+      ),
+
+      // Text-only button — Midnight, no border.
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: PettiColors.midnight,
+          textStyle: PettiText.bodyStrong(),
+          padding: const EdgeInsets.symmetric(
+            horizontal: PettiSpacing.s3,
+            vertical: PettiSpacing.s2,
+          ),
+        ),
+      ),
+
+      // Form inputs (login, signup, IMEI entry) — soft cream surface,
+      // marigold focus ring, alert-red error state.
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: PettiColors.sand,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: PettiSpacing.s4,
+          vertical: PettiSpacing.s4,
+        ),
+        hintStyle: PettiText.body().copyWith(color: PettiColors.fgFaint),
+        labelStyle: PettiText.label(),
+        floatingLabelStyle: PettiText.label().copyWith(
+          color: PettiColors.midnight,
+          fontWeight: FontWeight.w600,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(PettiRadii.md),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(PettiRadii.md),
+          borderSide: BorderSide(color: PettiColors.borderLight, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(PettiRadii.md),
+          borderSide: const BorderSide(color: PettiColors.marigold, width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(PettiRadii.md),
+          borderSide: const BorderSide(color: PettiColors.alert, width: 1.5),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(PettiRadii.md),
+          borderSide: const BorderSide(color: PettiColors.alert, width: 2),
+        ),
+        errorStyle: PettiText.bodySm().copyWith(color: PettiColors.alert),
+      ),
+
+      // Cards — Petti uses custom PettiCard for most surfaces, but Material
+      // Card defaults are aligned for consistency.
+      cardTheme: CardThemeData(
+        color: Colors.white,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(PettiRadii.md),
+          side: BorderSide(color: PettiColors.borderLight, width: 1),
+        ),
+      ),
+
+      // Dialogs — Cloud surface, rounded corners.
+      dialogTheme: DialogThemeData(
+        backgroundColor: PettiColors.cloud,
+        elevation: 24,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(PettiRadii.lg),
+        ),
+        titleTextStyle: PettiText.h3(),
+        contentTextStyle: PettiText.body(),
+      ),
+
+      // SnackBars — Midnight surface, used by error/info toasts.
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: PettiColors.midnight,
+        contentTextStyle: PettiText.body().copyWith(color: PettiColors.cloud),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(PettiRadii.md),
+        ),
+        actionTextColor: PettiColors.marigoldBright,
+      ),
+
+      // Switch / Checkbox / Radio — Marigold for the "on" state.
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return PettiColors.midnight;
+          return Colors.white;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return PettiColors.marigold;
+          return PettiColors.n300;
+        }),
+      ),
+
+      // Floating action button (rare in Petti UI but consistent if used).
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: PettiColors.marigold,
+        foregroundColor: PettiColors.midnight,
+        elevation: 4,
+      ),
+
+      // Loading indicators — Marigold.
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: PettiColors.marigold,
+        linearTrackColor: PettiColors.fog,
+        circularTrackColor: PettiColors.fog,
+      ),
+
+      // Touchable feedback (used by ListTile, InkWell). Soft marigold ripple.
+      splashColor: PettiColors.marigoldSoft,
+      highlightColor: PettiColors.marigoldSoft,
+    );
+  }
 }

@@ -35,10 +35,15 @@ class FirestoreService {
     return doc.exists ? doc.data() : null;
   }
 
-  /// Update user profile field
+  /// Update user profile fields. Uses `set` + merge instead of `update` so it
+  /// creates the doc if it doesn't yet exist (avoids `cloud_firestore/not-found`
+  /// errors). This is the right behavior for users whose Firebase Auth account
+  /// predates the version of the app that calls saveUserProfile() at signup —
+  /// e.g. accounts created during early prototyping or directly via Firebase
+  /// Console. Behaves identically to `update` for users who already have a doc.
   Future<void> updateUserProfile(String userId, Map<String, dynamic> updates) async {
     updates['updatedAt'] = FieldValue.serverTimestamp();
-    await _db.collection('users').doc(userId).update(updates);
+    await _db.collection('users').doc(userId).set(updates, SetOptions(merge: true));
   }
 
   // ==================== PET PROFILES ====================

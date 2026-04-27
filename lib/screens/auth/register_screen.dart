@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../utils/petti_theme.dart';
 import '../home/home_screen.dart';
 
+/// Sign-up — Petti style.
+///
+/// Quieter than login (no big brand mark — the user is already in the app
+/// at this point and just needs to fill the form). Inline section header,
+/// then form, then Marigold CTA.
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -36,9 +42,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (!_acceptTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Debes aceptar los términos y condiciones'),
-          backgroundColor: Theme.of(context).colorScheme.error,
+        const SnackBar(
+          content: Text('Debes aceptar los términos y condiciones'),
         ),
       );
       return;
@@ -49,7 +54,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       email: _emailController.text.trim(),
       password: _passwordController.text,
       fullName: _nameController.text.trim(),
-      phone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+      phone: _phoneController.text.trim().isEmpty
+          ? null
+          : _phoneController.text.trim(),
     );
 
     if (!mounted) return;
@@ -62,7 +69,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(authProvider.errorMessage ?? 'Error al registrarse'),
-          backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
     }
@@ -71,40 +77,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: PettiColors.cloud,
       appBar: AppBar(
-        title: const Text('Crear Cuenta'),
+        title: const Text('Crear cuenta'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(
+            horizontal: PettiSpacing.s5,
+            vertical: PettiSpacing.s4,
+          ),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Header
+                Text('Bienvenido a Petti', style: PettiText.h1()),
+                const SizedBox(height: PettiSpacing.s2),
                 Text(
-                  'Bienvenido a PetTrack',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+                  'Crea tu cuenta para registrar tu mascota y empezar a verla en el mapa.',
+                  style: PettiText.body().copyWith(color: PettiColors.fgDim),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Crea tu cuenta para comenzar a rastrear a tu mascota',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 32),
-                
+                const SizedBox(height: PettiSpacing.s6),
+
                 // Full name
                 TextFormField(
                   controller: _nameController,
                   textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.name],
                   decoration: const InputDecoration(
                     labelText: 'Nombre completo',
-                    prefixIcon: Icon(Icons.person),
+                    hintText: 'Nicolás Otero',
+                    prefixIcon: Icon(Icons.person_outline),
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -116,15 +125,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
-                
+                const SizedBox(height: PettiSpacing.s4),
+
                 // Email
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.newUsername],
                   decoration: const InputDecoration(
                     labelText: 'Correo electrónico',
-                    prefixIcon: Icon(Icons.email),
+                    hintText: 'tu@correo.com',
+                    prefixIcon: Icon(Icons.alternate_email),
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
@@ -136,36 +148,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
-                
+                const SizedBox(height: PettiSpacing.s4),
+
                 // Phone (optional)
                 TextFormField(
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.telephoneNumber],
                   decoration: const InputDecoration(
                     labelText: 'Teléfono (opcional)',
-                    prefixIcon: Icon(Icons.phone),
                     hintText: '+57 300 123 4567',
+                    prefixIcon: Icon(Icons.phone_outlined),
                   ),
                 ),
-                const SizedBox(height: 16),
-                
+                const SizedBox(height: PettiSpacing.s4),
+
                 // Password
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
+                  textInputAction: TextInputAction.next,
+                  autofillHints: const [AutofillHints.newPassword],
                   decoration: InputDecoration(
                     labelText: 'Contraseña',
-                    prefixIcon: const Icon(Icons.lock),
+                    helperText: 'Mínimo 6 caracteres',
+                    prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                        _obscurePassword
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
+                      onPressed: () => setState(
+                          () => _obscurePassword = !_obscurePassword),
                     ),
                   ),
                   validator: (value) {
@@ -178,24 +194,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
-                
+                const SizedBox(height: PettiSpacing.s4),
+
                 // Confirm password
                 TextFormField(
                   controller: _confirmPasswordController,
                   obscureText: _obscureConfirmPassword,
+                  textInputAction: TextInputAction.done,
+                  onFieldSubmitted: (_) => _handleRegister(),
                   decoration: InputDecoration(
                     labelText: 'Confirmar contraseña',
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                        _obscureConfirmPassword
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscureConfirmPassword = !_obscureConfirmPassword;
-                        });
-                      },
+                      onPressed: () => setState(() =>
+                          _obscureConfirmPassword = !_obscureConfirmPassword),
                     ),
                   ),
                   validator: (value) {
@@ -208,79 +225,100 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 24),
-                
-                // Terms and conditions
-                Row(
-                  children: [
-                    Checkbox(
-                      value: _acceptTerms,
-                      onChanged: (value) {
-                        setState(() {
-                          _acceptTerms = value ?? false;
-                        });
-                      },
+                const SizedBox(height: PettiSpacing.s5),
+
+                // Terms checkbox — softer "card" container so the legal
+                // sentence doesn't feel buried under the password field.
+                InkWell(
+                  onTap: () => setState(() => _acceptTerms = !_acceptTerms),
+                  borderRadius: BorderRadius.circular(PettiRadii.md),
+                  child: Container(
+                    padding: const EdgeInsets.all(PettiSpacing.s3),
+                    decoration: BoxDecoration(
+                      color: PettiColors.sand,
+                      borderRadius: BorderRadius.circular(PettiRadii.md),
+                      border: Border.all(
+                        color: _acceptTerms
+                            ? PettiColors.marigold
+                            : PettiColors.borderLight,
+                        width: _acceptTerms ? 2 : 1,
+                      ),
                     ),
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _acceptTerms = !_acceptTerms;
-                          });
-                        },
-                        child: Text.rich(
-                          TextSpan(
-                            text: 'Acepto los ',
-                            children: [
-                              TextSpan(
-                                text: 'términos y condiciones',
-                                style: TextStyle(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontWeight: FontWeight.bold,
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          value: _acceptTerms,
+                          activeColor: PettiColors.marigold,
+                          checkColor: PettiColors.midnight,
+                          onChanged: (v) =>
+                              setState(() => _acceptTerms = v ?? false),
+                        ),
+                        Expanded(
+                          child: Text.rich(
+                            TextSpan(
+                              style: PettiText.bodySm(),
+                              children: [
+                                const TextSpan(text: 'Acepto los '),
+                                TextSpan(
+                                  text: 'términos y condiciones',
+                                  style: PettiText.bodySm().copyWith(
+                                    color: PettiColors.midnight,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.underline,
+                                  ),
                                 ),
-                              ),
-                            ],
+                                const TextSpan(text: ' de Petti'),
+                              ],
+                            ),
                           ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: PettiSpacing.s5),
+
+                // Primary CTA
+                Consumer<AuthProvider>(
+                  builder: (context, auth, _) => ElevatedButton(
+                    onPressed: auth.isLoading ? null : _handleRegister,
+                    child: auth.isLoading
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation(
+                                  PettiColors.midnight),
+                            ),
+                          )
+                        : const Text('Crear cuenta'),
+                  ),
+                ),
+                const SizedBox(height: PettiSpacing.s4),
+
+                // Back to login
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '¿Ya tienes cuenta? ',
+                      style: PettiText.bodySm()
+                          .copyWith(color: PettiColors.fgDim),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: Text(
+                        'Inicia sesión',
+                        style: PettiText.bodySm().copyWith(
+                          color: PettiColors.midnight,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-                
-                // Register button
-                Consumer<AuthProvider>(
-                  builder: (context, auth, _) {
-                    if (auth.isLoading) {
-                      return const Center(
-                        child: CircularProgressIndicator(),
-                      );
-                    }
-                    
-                    return ElevatedButton(
-                      onPressed: _handleRegister,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 4),
-                        child: Text('Crear Cuenta'),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                
-                // Login link
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('¿Ya tienes cuenta? '),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                      },
-                      child: const Text('Inicia sesión'),
-                    ),
-                  ],
-                ),
+                const SizedBox(height: PettiSpacing.s5),
               ],
             ),
           ),

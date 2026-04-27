@@ -51,6 +51,23 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  # Generates Android (legacy + adaptive) and iOS launcher icons from
+  # assets/icons/petti_icon*.png. Source PNGs are produced by
+  # assets/icons/generate_petti_icon.py — see header for rationale.
+  # Re-run with: dart run flutter_launcher_icons
+  flutter_launcher_icons: ^0.14.2
+
+flutter_launcher_icons:
+  android: "ic_launcher"  # writes to android/app/src/main/res/mipmap-*/
+  ios: true               # writes to ios/Runner/Assets.xcassets/AppIcon.appiconset/
+  image_path: "assets/icons/petti_icon.png"
+  remove_alpha_ios: true  # iOS rejects alpha channels in app icons
+  # Adaptive (Android 8+) — foreground floats over solid Marigold background.
+  adaptive_icon_background: "#E8A33D"
+  adaptive_icon_foreground: "assets/icons/petti_icon_foreground.png"
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icons/
+    - assets/images/

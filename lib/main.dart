@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
-import 'utils/theme.dart';
+// Petti is the global theme as of 2026-04-27. The legacy `utils/theme.dart`
+// is no longer imported; it can be deleted once we confirm no straggler
+// screens reference AppTheme directly. See utils/petti_theme.dart for the
+// rationale and full token list.
+import 'utils/petti_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/traccar_provider.dart';
 import 'providers/notification_provider.dart';
@@ -32,7 +36,7 @@ class PetTrackApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'PetTrack',
-        theme: AppTheme.lightTheme,
+        theme: PettiTheme.lightTheme,
         debugShowCheckedModeBanner: false,
         home: const SplashScreen(),
       ),

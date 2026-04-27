@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../utils/petti_theme.dart';
 
+/// Reset password — Petti style.
+///
+/// Two states: form (single email field + Marigold CTA) and success
+/// (Sabana-green confirmation + back button). Both states are intentionally
+/// minimal since this is a one-shot recovery flow.
 class ResetPasswordScreen extends StatefulWidget {
   const ResetPasswordScreen({super.key});
 
@@ -24,19 +30,18 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await authProvider.resetPassword(_emailController.text.trim());
+    final success =
+        await authProvider.resetPassword(_emailController.text.trim());
 
     if (!mounted) return;
 
     if (success) {
-      setState(() {
-        _emailSent = true;
-      });
+      setState(() => _emailSent = true);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(authProvider.errorMessage ?? 'Error al enviar el correo'),
-          backgroundColor: Theme.of(context).colorScheme.error,
+          content:
+              Text(authProvider.errorMessage ?? 'Error al enviar el correo'),
         ),
       );
     }
@@ -45,12 +50,16 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: PettiColors.cloud,
       appBar: AppBar(
-        title: const Text('Recuperar Contraseña'),
+        title: const Text('Recuperar contraseña'),
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(
+            horizontal: PettiSpacing.s5,
+            vertical: PettiSpacing.s4,
+          ),
           child: _emailSent ? _buildSuccessView() : _buildFormView(),
         ),
       ),
@@ -63,41 +72,49 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Icon
-          Icon(
-            Icons.lock_reset,
-            size: 80,
-            color: Theme.of(context).colorScheme.primary,
+          const SizedBox(height: PettiSpacing.s5),
+
+          // Icon panel — soft marigold square holding the lock-reset glyph.
+          Center(
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: PettiColors.marigoldSoft,
+                borderRadius: BorderRadius.circular(PettiRadii.md),
+              ),
+              child: const Icon(
+                Icons.lock_reset_outlined,
+                size: 40,
+                color: PettiColors.midnight,
+              ),
+            ),
           ),
-          const SizedBox(height: 24),
-          
-          // Title
+          const SizedBox(height: PettiSpacing.s5),
+
           Text(
             '¿Olvidaste tu contraseña?',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: PettiText.h2(),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 8),
-          
-          // Description
+          const SizedBox(height: PettiSpacing.s2),
           Text(
-            'Ingresa tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[600],
-            ),
+            'Ingresa tu correo y te enviaremos un enlace para restablecerla.',
+            style: PettiText.body().copyWith(color: PettiColors.fgDim),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 32),
-          
-          // Email field
+          const SizedBox(height: PettiSpacing.s6),
+
           TextFormField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.done,
+            autofillHints: const [AutofillHints.email],
+            onFieldSubmitted: (_) => _handleResetPassword(),
             decoration: const InputDecoration(
               labelText: 'Correo electrónico',
-              prefixIcon: Icon(Icons.email),
+              hintText: 'tu@correo.com',
+              prefixIcon: Icon(Icons.alternate_email),
             ),
             validator: (value) {
               if (value == null || value.isEmpty) {
@@ -109,25 +126,23 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               return null;
             },
           ),
-          const SizedBox(height: 24),
-          
-          // Send button
+          const SizedBox(height: PettiSpacing.s5),
+
           Consumer<AuthProvider>(
-            builder: (context, auth, _) {
-              if (auth.isLoading) {
-                return const Center(
-                  child: CircularProgressIndicator(),
-                );
-              }
-              
-              return ElevatedButton(
-                onPressed: _handleResetPassword,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 4),
-                  child: Text('Enviar Enlace'),
-                ),
-              );
-            },
+            builder: (context, auth, _) => ElevatedButton(
+              onPressed: auth.isLoading ? null : _handleResetPassword,
+              child: auth.isLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor:
+                            AlwaysStoppedAnimation(PettiColors.midnight),
+                      ),
+                    )
+                  : const Text('Enviar enlace'),
+            ),
           ),
         ],
       ),
@@ -139,60 +154,53 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Success icon
-        Icon(
-          Icons.check_circle,
-          size: 100,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        const SizedBox(height: 24),
-        
-        // Title
-        Text(
-          '¡Correo Enviado!',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.bold,
+        // Sabana-green check circle for success — follows Petti convention
+        // that "safe / OK" states use the Sabana token rather than Marigold.
+        Center(
+          child: Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              color: PettiColors.sabanaSoft,
+              borderRadius: BorderRadius.circular(PettiRadii.lg),
+            ),
+            child: const Icon(
+              Icons.mark_email_read_outlined,
+              size: 56,
+              color: PettiColors.sabana,
+            ),
           ),
+        ),
+        const SizedBox(height: PettiSpacing.s5),
+
+        Text(
+          '¡Correo enviado!',
+          style: PettiText.h1(),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 16),
-        
-        // Message
+        const SizedBox(height: PettiSpacing.s4),
         Text(
-          'Hemos enviado un enlace de recuperación a:',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Colors.grey[600],
-          ),
+          'Enviamos un enlace de recuperación a',
+          style: PettiText.body().copyWith(color: PettiColors.fgDim),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: PettiSpacing.s2),
         Text(
           _emailController.text,
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: PettiText.bodyStrong().copyWith(fontSize: 16),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 24),
-        
+        const SizedBox(height: PettiSpacing.s4),
         Text(
-          'Revisa tu bandeja de entrada y sigue las instrucciones para restablecer tu contraseña.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Colors.grey[600],
-          ),
+          'Revisa tu bandeja de entrada y sigue las instrucciones.',
+          style: PettiText.bodySm().copyWith(color: PettiColors.fgDim),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 48),
-        
-        // Back button
+        const SizedBox(height: PettiSpacing.s7),
+
         OutlinedButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-          child: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 4),
-            child: Text('Volver al Inicio'),
-          ),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Volver a iniciar sesión'),
         ),
       ],
     );
