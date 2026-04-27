@@ -1,12 +1,32 @@
+// First-position waiting screen — Petti restyle.
+//
+// After the user provisions their device, this screen polls Traccar
+// every 5s waiting for the MT710's first GPS fix to come through.
+//
+// Three states:
+//   waiting  — pulsing satellite icon over Marigold-soft, instructions,
+//              live waiting timer, blue "tip" replaced with Sabana-soft
+//              calm note, soft "Omitir por ahora" escape hatch
+//   success  — full-bleed Marigold gradient with Cloud check medallion,
+//              quick stat card, auto-routes to SetupGeofence after 2s
+//   timeout  — "Sin señal" hero with Marigold-soft warning panel listing
+//              troubleshooting bullets, retry + skip-for-now CTAs
+//
+// All three reuse the existing Petti tokens. The success state's
+// gradient is intentionally different from the brand-flat Marigold of
+// other Petti surfaces: success is a moment, the celebration is OK.
+
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../models/device.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
+import '../../utils/petti_theme.dart';
 import 'setup_geofence_screen.dart';
 
-/// Screen waiting for first GPS position
 class FirstPositionScreen extends StatefulWidget {
   final Device device;
   final String petName;
@@ -25,23 +45,23 @@ class _FirstPositionScreenState extends State<FirstPositionScreen>
     with SingleTickerProviderStateMixin {
   Timer? _pollTimer;
   Timer? _timeoutTimer;
+  Timer? _tickerTimer;
   int _secondsWaiting = 0;
   Position? _firstPosition;
   bool _hasTimedOut = false;
-  
+
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
     super.initState();
-    
+
     _pulseController = AnimationController(
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat(reverse: true);
-    
-    _pulseAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
+    _pulseAnimation = Tween<double>(begin: 0.92, end: 1.08).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
@@ -49,26 +69,30 @@ class _FirstPositionScreenState extends State<FirstPositionScreen>
     _startTimeout();
   }
 
-  void _startPolling() {
-    // Poll every 5 seconds for position
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      await _checkForPosition();
-    });
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    _timeoutTimer?.cancel();
+    _tickerTimer?.cancel();
+    _pulseController.dispose();
+    super.dispose();
+  }
 
-    // Initial check
+  void _startPolling() {
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) async => _checkForPosition(),
+    );
     _checkForPosition();
   }
 
   void _startTimeout() {
-    // Timeout after 5 minutes
     _timeoutTimer = Timer(const Duration(minutes: 5), () {
       if (_firstPosition == null && mounted) {
         setState(() => _hasTimedOut = true);
       }
     });
-
-    // Update seconds counter
-    Timer.periodic(const Duration(seconds: 1), (timer) {
+    _tickerTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted || _firstPosition != null) {
         timer.cancel();
         return;
@@ -79,25 +103,16 @@ class _FirstPositionScreenState extends State<FirstPositionScreen>
 
   Future<void> _checkForPosition() async {
     if (!mounted || _firstPosition != null) return;
-
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
-    
-    // Refresh devices to get latest position
     await traccar.refreshDevices();
-    
     final position = traccar.getLastPosition(widget.device.traccarId!);
-    
     if (position != null && mounted) {
       setState(() => _firstPosition = position);
       _pollTimer?.cancel();
       _timeoutTimer?.cancel();
-      
-      // Wait a bit to show success, then navigate
+      _tickerTimer?.cancel();
       await Future.delayed(const Duration(seconds: 2));
-      
-      if (mounted) {
-        _navigateToGeofenceSetup(position);
-      }
+      if (mounted) _navigateToGeofenceSetup(position);
     }
   }
 
@@ -105,7 +120,7 @@ class _FirstPositionScreenState extends State<FirstPositionScreen>
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (context) => SetupGeofenceScreen(
+        builder: (_) => SetupGeofenceScreen(
           device: widget.device,
           petName: widget.petName,
           currentPosition: position,
@@ -116,139 +131,135 @@ class _FirstPositionScreenState extends State<FirstPositionScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_hasTimedOut) {
-      return _buildTimeoutView();
-    }
-
-    if (_firstPosition != null) {
-      return _buildSuccessView();
-    }
-
+    if (_hasTimedOut) return _buildTimeoutView();
+    if (_firstPosition != null) return _buildSuccessView();
     return _buildWaitingView();
   }
 
+  // ============================================================== waiting
+
   Widget _buildWaitingView() {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Esperando señal GPS'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Animated GPS icon
-            ScaleTransition(
-              scale: _pulseAnimation,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2D6A4F).withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.satellite_alt,
-                  size: 64,
-                  color: Color(0xFF2D6A4F),
-                ),
-              ),
-            ),
-            const SizedBox(height: 32),
-
-            // Loading indicator
-            const CircularProgressIndicator(),
-            const SizedBox(height: 24),
-
-            // Title
-            Text(
-              'Buscando señal GPS...',
-              style: Theme.of(context).textTheme.headlineSmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-
-            // Instructions
-            Text(
-              'Asegúrate de que el dispositivo esté:\n'
-              '• Encendido y con batería\n'
-              '• Al aire libre o cerca de una ventana\n'
-              '• Con vista clara al cielo',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[700],
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-
-            // Timer
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.timer, size: 16),
-                  const SizedBox(width: 8),
-                  Text(
-                    _formatTime(_secondsWaiting),
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 16,
-                    ),
+      backgroundColor: PettiColors.cloud,
+      appBar: AppBar(title: const Text('Buscando señal')),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(PettiSpacing.s5),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ScaleTransition(
+                scale: _pulseAnimation,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: PettiColors.marigoldSoft,
+                    borderRadius: BorderRadius.circular(PettiRadii.lg),
                   ),
-                ],
+                  child: const Icon(
+                    Icons.satellite_alt_rounded,
+                    size: 60,
+                    color: PettiColors.marigold,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 32),
+              const SizedBox(height: PettiSpacing.s6),
 
-            // Tip
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue[200]!),
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
               ),
-              child: Row(
-                children: [
-                  Icon(Icons.lightbulb_outline, color: Colors.blue[700]),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'La primera señal puede tardar 2-5 minutos',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.blue[900],
+              const SizedBox(height: PettiSpacing.s4),
+
+              Text(
+                'Buscando señal GPS…',
+                style: PettiText.h2(),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: PettiSpacing.s3),
+              Text(
+                'Asegúrate de que el collar esté:\n'
+                '• Encendido y con batería\n'
+                '• Al aire libre o cerca de una ventana\n'
+                '• Con vista clara al cielo',
+                style: PettiText.body().copyWith(
+                  color: PettiColors.fgDim,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: PettiSpacing.s5),
+
+              // Live timer pill — Sand fill, monospace numerals.
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: PettiSpacing.s4,
+                  vertical: PettiSpacing.s2,
+                ),
+                decoration: BoxDecoration(
+                  color: PettiColors.sand,
+                  borderRadius: BorderRadius.circular(PettiRadii.pill),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.timer_outlined,
+                        size: 16, color: PettiColors.fgDim),
+                    const SizedBox(width: PettiSpacing.s2),
+                    Text(
+                      _formatTime(_secondsWaiting),
+                      style:
+                          PettiText.number(size: 14, weight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: PettiSpacing.s5),
+
+              // Tip panel — Sabana-soft (calm "this is normal" tone).
+              Container(
+                padding: const EdgeInsets.all(PettiSpacing.s3),
+                decoration: BoxDecoration(
+                  color: PettiColors.sabanaSoft,
+                  borderRadius: BorderRadius.circular(PettiRadii.sm),
+                  border: Border.all(
+                    color: PettiColors.sabana.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lightbulb_outline,
+                        color: PettiColors.sabana, size: 20),
+                    const SizedBox(width: PettiSpacing.s3),
+                    Expanded(
+                      child: Text(
+                        'La primera señal puede tardar 2–5 minutos.',
+                        style: PettiText.bodySm()
+                            .copyWith(color: PettiColors.midnight),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const Spacer(),
 
-            // Skip button (for testing)
-            TextButton(
-              onPressed: () {
-                // For development: skip to home
-                Navigator.of(context).popUntil((route) => route.isFirst);
-              },
-              child: const Text('Omitir por ahora'),
-            ),
-          ],
+              const Spacer(),
+
+              TextButton(
+                onPressed: () => Navigator.of(context)
+                    .popUntil((route) => route.isFirst),
+                child: const Text('Omitir por ahora'),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  // ============================================================== success
 
   Widget _buildSuccessView() {
     return Scaffold(
@@ -257,82 +268,198 @@ class _FirstPositionScreenState extends State<FirstPositionScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFF2D6A4F), Color(0xFF52B788)],
+            colors: [PettiColors.marigoldBright, PettiColors.marigold],
           ),
         ),
-        child: Center(
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(PettiSpacing.s5),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      color: PettiColors.cloud,
+                      shape: BoxShape.circle,
+                      boxShadow: PettiShadows.elevation2,
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      size: 72,
+                      color: PettiColors.midnight,
+                    ),
+                  ),
+                  const SizedBox(height: PettiSpacing.s6),
+
+                  Text(
+                    '¡Encontramos a ${widget.petName}!',
+                    style: PettiText.h1().copyWith(
+                      color: PettiColors.midnight,
+                      fontSize: 30,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: PettiSpacing.s3),
+                  Text(
+                    'Configurando rastreo en tiempo real…',
+                    style: PettiText.body().copyWith(
+                      color: PettiColors.midnight.withValues(alpha: 0.75),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  if (_firstPosition != null) ...[
+                    const SizedBox(height: PettiSpacing.s5),
+                    Container(
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: PettiSpacing.s4),
+                      padding: const EdgeInsets.all(PettiSpacing.s4),
+                      decoration: BoxDecoration(
+                        color: PettiColors.midnight.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(PettiRadii.md),
+                      ),
+                      child: Column(
+                        children: [
+                          _successInfo(
+                            Icons.location_on_outlined,
+                            _firstPosition!.coordinatesText,
+                          ),
+                          const SizedBox(height: PettiSpacing.s2),
+                          _successInfo(
+                            Icons.access_time_rounded,
+                            _formatDateTime(_firstPosition!.deviceTime),
+                          ),
+                          if (_firstPosition!.accuracy != null) ...[
+                            const SizedBox(height: PettiSpacing.s2),
+                            _successInfo(
+                              Icons.my_location_rounded,
+                              '±${_firstPosition!.accuracy!.toStringAsFixed(0)} m de precisión',
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _successInfo(IconData icon, String text) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 16, color: PettiColors.midnight),
+        const SizedBox(width: PettiSpacing.s2),
+        Text(
+          text,
+          style: PettiText.bodySm()
+              .copyWith(color: PettiColors.midnight, fontSize: 13),
+        ),
+      ],
+    );
+  }
+
+  // ============================================================== timeout
+
+  Widget _buildTimeoutView() {
+    return Scaffold(
+      backgroundColor: PettiColors.cloud,
+      appBar: AppBar(title: const Text('Sin señal')),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(PettiSpacing.s5),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Success icon
+              const SizedBox(height: PettiSpacing.s5),
               Container(
-                width: 120,
-                height: 120,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: PettiColors.marigoldSoft,
+                  borderRadius: BorderRadius.circular(PettiRadii.lg),
                 ),
                 child: const Icon(
-                  Icons.check_circle,
-                  size: 80,
-                  color: Color(0xFF2D6A4F),
+                  Icons.signal_wifi_statusbar_connected_no_internet_4,
+                  size: 56,
+                  color: PettiColors.marigoldDim,
                 ),
               ),
-              const SizedBox(height: 32),
-
-              // Success message
-              const Text(
-                '¡Señal GPS encontrada!',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: PettiSpacing.s5),
 
               Text(
-                '${widget.petName} está listo para ser rastreado',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.white70,
-                ),
+                'No pudimos encontrar la señal',
+                style: PettiText.h2(),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: PettiSpacing.s2),
+              Text(
+                'El collar aún no ha enviado su ubicación.',
+                style: PettiText.body().copyWith(color: PettiColors.fgDim),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: PettiSpacing.s5),
 
-              // Position info
-              if (_firstPosition != null)
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 40),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    children: [
-                      _buildInfoRow(
-                        Icons.location_on,
-                        _firstPosition!.coordinatesText,
-                      ),
-                      const SizedBox(height: 8),
-                      _buildInfoRow(
-                        Icons.access_time,
-                        _formatDateTime(_firstPosition!.deviceTime),
-                      ),
-                      if (_firstPosition!.accuracy != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: _buildInfoRow(
-                            Icons.my_location,
-                            '±${_firstPosition!.accuracy!.toStringAsFixed(0)}m precisión',
-                          ),
-                        ),
-                    ],
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(PettiSpacing.s4),
+                decoration: BoxDecoration(
+                  color: PettiColors.marigoldSoft,
+                  borderRadius: BorderRadius.circular(PettiRadii.md),
+                  border: Border.all(
+                    color: PettiColors.marigold.withValues(alpha: 0.3),
                   ),
                 ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.help_outline,
+                            color: PettiColors.marigoldDim, size: 22),
+                        const SizedBox(width: PettiSpacing.s2),
+                        Text('Soluciones', style: PettiText.h4()),
+                      ],
+                    ),
+                    const SizedBox(height: PettiSpacing.s3),
+                    _bullet('Verifica que el collar esté encendido'),
+                    _bullet('Confirma que tenga batería suficiente'),
+                    _bullet('Colócalo al aire libre por 5 minutos'),
+                    _bullet('Asegúrate de que la SIM tenga datos activos'),
+                  ],
+                ),
+              ),
+
+              const Spacer(),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _hasTimedOut = false;
+                      _secondsWaiting = 0;
+                    });
+                    _startPolling();
+                    _startTimeout();
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Reintentar'),
+                ),
+              ),
+              const SizedBox(height: PettiSpacing.s2),
+              TextButton(
+                onPressed: () => Navigator.of(context)
+                    .popUntil((route) => route.isFirst),
+                child: const Text('Configurar más tarde'),
+              ),
             ],
           ),
         ),
@@ -340,144 +467,26 @@ class _FirstPositionScreenState extends State<FirstPositionScreen>
     );
   }
 
-  Widget _buildTimeoutView() {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sin señal GPS'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.signal_wifi_statusbar_connected_no_internet_4,
-              size: 80,
-              color: Colors.orange,
-            ),
-            const SizedBox(height: 32),
-
-            const Text(
-              'No se pudo obtener señal GPS',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-
-            Text(
-              'El dispositivo no ha enviado su ubicación aún.',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[700],
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-
-            // Troubleshooting
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange[200]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.help_outline, color: Colors.orange[700]),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Soluciones',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _buildBullet('Verifica que el dispositivo esté encendido'),
-                  _buildBullet('Confirma que tenga batería suficiente'),
-                  _buildBullet('Colócalo al aire libre por 5 minutos'),
-                  _buildBullet('Asegúrate de que la SIM tenga datos activos'),
-                ],
-              ),
-            ),
-            const Spacer(),
-
-            // Action buttons
-            ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _hasTimedOut = false;
-                  _secondsWaiting = 0;
-                });
-                _startPolling();
-                _startTimeout();
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('Reintentar'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 16,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).popUntil((route) => route.isFirst);
-              },
-              child: const Text('Configurar más tarde'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String text) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, size: 16, color: Colors.white),
-        const SizedBox(width: 8),
-        Text(
-          text,
-          style: const TextStyle(
-            fontSize: 14,
-            color: Colors.white,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBullet(String text) {
+  Widget _bullet(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: PettiSpacing.s2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('• ', style: TextStyle(fontSize: 16)),
+          const Padding(
+            padding: EdgeInsets.only(top: 2),
+            child: Icon(Icons.circle, size: 6, color: PettiColors.midnight),
+          ),
+          const SizedBox(width: PettiSpacing.s2),
           Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontSize: 14),
-            ),
+            child: Text(text, style: PettiText.body()),
           ),
         ],
       ),
     );
   }
+
+  // ============================================================== format
 
   String _formatTime(int seconds) {
     final mins = seconds ~/ 60;
@@ -486,23 +495,9 @@ class _FirstPositionScreenState extends State<FirstPositionScreen>
   }
 
   String _formatDateTime(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    
-    if (diff.inMinutes < 1) {
-      return 'Hace unos segundos';
-    } else if (diff.inMinutes < 60) {
-      return 'Hace ${diff.inMinutes} min';
-    } else {
-      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    }
-  }
-
-  @override
-  void dispose() {
-    _pollTimer?.cancel();
-    _timeoutTimer?.cancel();
-    _pulseController.dispose();
-    super.dispose();
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'Hace unos segundos';
+    if (diff.inMinutes < 60) return 'Hace ${diff.inMinutes} min';
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }
