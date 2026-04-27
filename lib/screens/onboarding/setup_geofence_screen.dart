@@ -291,7 +291,8 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
 
     try {
-      final success = await traccar.createCircularGeofence(
+      // Returns the new geofence id on success or null on failure.
+      final geofenceId = await traccar.createCircularGeofence(
         name: _geofenceName.trim(),
         latitude: _center.latitude,
         longitude: _center.longitude,
@@ -299,7 +300,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
         deviceId: widget.device.traccarId!,
       );
 
-      if (success) {
+      if (geofenceId != null) {
         _showSuccess();
       } else {
         _showError(traccar.errorMessage ?? 'Error al crear zona');

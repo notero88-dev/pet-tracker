@@ -11,7 +11,9 @@
 //   Step 4   show detected WiFi + stats, CTA to dismiss
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/device.dart';
+import '../../providers/traccar_provider.dart';
 import '../../services/device_commands_api.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/petti_primitives.dart';
@@ -205,6 +207,20 @@ class _ZonaSeguraWizardScreenState extends State<ZonaSeguraWizardScreen> {
         _detectedMacs = macs;
         _step = 4;
       });
+
+      // The device-side Zona Segura is set (DEF,R succeeded). Now mirror it
+      // into Traccar as a server-side geofence so the push-service can fire
+      // "ya no está en Casa" / "volvió a casa" notifications when the pet
+      // crosses the boundary. The two zones serve different roles:
+      //   - DEF,R on the device → controls Mode 8 sleep/wake (power saving)
+      //   - Traccar geofence    → triggers geofenceEnter/Exit events on
+      //                            the server, which push-service forwards
+      //                            to FCM as alerts
+      // We use `unawaited`-style fire-and-forget here: a network failure in
+      // creating the Traccar geofence shouldn't block the wizard's success
+      // animation. The user can always re-create the geofence later from
+      // the geofences screen if this fails. Errors are logged.
+      _ensureTraccarGeofence();
     } else if (result is DeviceCommandError) {
       setState(() {
         _errorMessage = _friendlyError(result);
@@ -222,6 +238,59 @@ class _ZonaSeguraWizardScreenState extends State<ZonaSeguraWizardScreen> {
         .map((s) => s.trim())
         .where((s) => s.length >= 12 && !s.contains(' '))
         .toList();
+  }
+
+  /// Mirror the device-side Zona Segura into Traccar as a circular geofence,
+  /// so push-service can emit FCM alerts when the pet crosses it.
+  ///
+  /// Pulls the lat/lng from the device's most recent position cached in
+  /// TraccarProvider. The DEF,R command on the device requires GPS to be
+  /// available, so the last position should be very fresh when we get here.
+  /// If for any reason no position is cached (provider not yet populated,
+  /// fresh device with no history), we silently skip — the device-side zone
+  /// still works, the user just won't get exit alerts until the geofence is
+  /// created another way (e.g., from the geofences screen).
+  Future<void> _ensureTraccarGeofence() async {
+    if (!mounted) return;
+    final traccar = Provider.of<TraccarProvider>(context, listen: false);
+    final traccarId = widget.device.traccarId;
+    if (traccarId == null) return;
+
+    final position = traccar.getLastPosition(traccarId);
+    if (position == null) {
+      debugPrint(
+          'zona_segura_wizard: no cached position for device $traccarId — skipping Traccar geofence creation. Mode 8 zone is still set on device.');
+      return;
+    }
+
+    // Naming convention: "Casa de Buddy" — readable in notifications and
+    // the geofences list.
+    final name = 'Casa de ${widget.petName}';
+
+    final geofenceId = await traccar.createCircularGeofence(
+      name: name,
+      latitude: position.latitude,
+      longitude: position.longitude,
+      radiusMeters: _radius.toDouble(),
+      deviceId: traccarId,
+      attributes: {
+        // These attributes flow into push-service via the geofence record;
+        // useful for filtering ("only fire alerts for zones tagged
+        // type=home") and analytics.
+        'type': 'home',
+        'petName': widget.petName,
+        'createdBy': 'zona_segura_wizard',
+        'wifiMacs': _detectedMacs.join(','),
+      },
+    );
+
+    if (geofenceId == null) {
+      debugPrint(
+          'zona_segura_wizard: failed to create Traccar geofence (device-side zone was still saved successfully)');
+    } else {
+      debugPrint(
+          'zona_segura_wizard: created Traccar geofence id=$geofenceId for device $traccarId');
+    }
   }
 
   String _friendlyError(DeviceCommandError e) {

@@ -207,35 +207,50 @@ class TraccarProvider with ChangeNotifier {
     return _provisioningApi.getLastProvisionedCredentials();
   }
 
-  /// Create circular geofence
-  Future<bool> createCircularGeofence({
+  /// Create circular geofence and link it to a device.
+  ///
+  /// Returns the new geofence id on success, or null on failure.
+  ///
+  /// WKT format note: Traccar's CIRCLE expects
+  ///   `CIRCLE (LAT LON, RADIUS_METERS)`
+  /// — radius in METERS, comma between the longitude and radius. The
+  /// previous version of this method converted to degrees and used a
+  /// space; that produced geofences that visually rendered but never
+  /// actually triggered geofenceEnter/geofenceExit events because the
+  /// radius was off by ~111000×. Verified by walking the device out of
+  /// a "100m" zone and getting no event. Now fixed.
+  Future<int?> createCircularGeofence({
     required String name,
     required double latitude,
     required double longitude,
     required double radiusMeters,
     required int deviceId,
+    Map<String, dynamic>? attributes,
   }) async {
     try {
-      // WKT CIRCLE format: "CIRCLE(lat lon radius_in_degrees)"
-      // Convert meters to degrees (approximate: 1 degree ≈ 111km)
-      final radiusDegrees = radiusMeters / 111000;
-      final area = 'CIRCLE($latitude $longitude $radiusDegrees)';
-      
+      final area = 'CIRCLE ($latitude $longitude, $radiusMeters)';
+
       final geofence = await _api.createGeofence(
         name: name,
         area: area,
+        attributes: attributes,
       );
-      
-      if (geofence != null) {
-        // Link to device
-        await _api.linkGeofenceToDevice(geofence['id'], deviceId);
-        return true;
+
+      if (geofence == null) return null;
+
+      final geofenceId = geofence['id'] as int;
+      final linked = await _api.linkGeofenceToDevice(geofenceId, deviceId);
+      if (!linked) {
+        // Geofence exists in Traccar but isn't linked to the device. Not
+        // strictly an error (admin can link manually) but worth logging.
+        debugPrint(
+            'Warning: created geofence $geofenceId but failed to link to device $deviceId');
       }
-      return false;
+      return geofenceId;
     } catch (e) {
       _errorMessage = 'Error al crear zona: $e';
       notifyListeners();
-      return false;
+      return null;
     }
   }
 

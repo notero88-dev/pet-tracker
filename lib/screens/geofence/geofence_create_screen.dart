@@ -324,7 +324,7 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
 
     try {
       bool success;
-      
+
       if (widget.editGeofence != null) {
         // Update existing geofence
         success = await traccar.updateGeofence(
@@ -334,14 +334,17 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
           deviceId: widget.device.traccarId!,
         );
       } else {
-        // Create new geofence
-        success = await traccar.createCircularGeofence(
+        // Create new geofence — createCircularGeofence now returns the new
+        // geofence id (int) on success or null on failure. Still using a
+        // boolean here for the rest of the flow.
+        final geofenceId = await traccar.createCircularGeofence(
           name: _nameController.text.trim(),
           latitude: _center!.latitude,
           longitude: _center!.longitude,
           radiusMeters: _radiusMeters,
           deviceId: widget.device.traccarId!,
         );
+        success = geofenceId != null;
       }
 
       if (success && mounted) {
