@@ -72,6 +72,12 @@ class _PetTrackAppState extends State<PetTrackApp> {
         // Reuse the eagerly-constructed instance so FCM and the widget
         // tree share the same NotificationProvider state.
         ChangeNotifierProvider.value(value: _notificationProvider),
+        // FCMService isn't a ChangeNotifier (no rebuild-driving state) but
+        // we expose it via Provider so screens can call its methods —
+        // specifically the Zona Segura wizard calls
+        // requestPermissionAndRegister() after success, instead of
+        // permission being prompted at app launch. See fcm_service.dart.
+        Provider<FCMService>.value(value: _fcm),
       ],
       child: MaterialApp(
         title: 'PetTrack',

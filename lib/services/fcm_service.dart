@@ -28,6 +28,8 @@
 // in the widget tree. AppNavigator.navigatorKey must be plugged into
 // MaterialApp before any navigation calls fire.
 
+import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -47,13 +49,28 @@ class FCMService {
   /// after `initialize()` returns.
   NotificationProvider? notificationProvider;
 
-  /// Initialize FCM. Returns once permissions are settled and handlers
-  /// are wired. Safe to call multiple times — idempotent.
+  /// Token-refresh subscription. Created lazily once the user has granted
+  /// permission so we don't subscribe (and quietly fail) before we have a
+  /// usable token.
+  StreamSubscription<String>? _tokenRefreshSub;
+
+  /// Wire up FCM message handlers + cold-start routing. Does NOT prompt the
+  /// user for notification permission — that's deferred to
+  /// [requestPermissionAndRegister], called from the Zona Segura wizard's
+  /// success step where the user has narrative context for what they're
+  /// allowing.
+  ///
+  /// Why split: requesting permission at app launch means a brand-new user
+  /// sees the iOS dialog before they understand what alerts they'll get.
+  /// Acceptance rates roughly double when the prompt fires immediately
+  /// after the user has just configured "alert me when my pet leaves home".
+  /// We still need handlers wired at boot so any already-authorized user
+  /// receives messages from the first frame; only the prompt is deferred.
+  ///
+  /// Safe to call multiple times — idempotent.
   Future<void> initialize({NotificationProvider? notificationProvider}) async {
     this.notificationProvider = notificationProvider;
 
-    // Web has no FCM in this app — needs a service worker + VAPID key,
-    // neither of which is set up. Production targets iOS/Android only.
     if (kIsWeb) {
       debugPrint(
           'FCM: skipping initialization on web (no service worker configured)');
@@ -61,30 +78,21 @@ class FCMService {
     }
 
     try {
-      final settings = await _messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        provisional: false,
-      );
-
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        debugPrint('FCM: User granted permission');
-
-        final token = await _messaging.getToken();
-        if (token != null) {
-          debugPrint('FCM Token: $token');
-          await _firestore.saveFcmToken(token);
-        }
-        _messaging.onTokenRefresh.listen((newToken) {
-          debugPrint('FCM Token refreshed: $newToken');
-          _firestore.saveFcmToken(newToken);
-        });
-      } else {
-        debugPrint('FCM: User declined or has not accepted permission');
-      }
-
       _registerHandlers();
+
+      // Re-bind the token if the user previously granted permission.
+      // getToken() returns null on iOS without permission, so this is a
+      // no-op for fresh installs — they'll get a token via
+      // requestPermissionAndRegister later.
+      final settings = await _messaging.getNotificationSettings();
+      if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional) {
+        await _bindToken();
+      } else {
+        debugPrint(
+            'FCM: permission not yet requested or denied — deferring token registration. '
+            'Call FCMService.requestPermissionAndRegister() after Zona Segura succeeds.');
+      }
 
       // Cold-start: the user tapped a notification while the app was
       // terminated. Handle deferred so we don't try to navigate before
@@ -96,8 +104,72 @@ class FCMService {
         });
       }
     } catch (e) {
-      debugPrint('FCM Error: $e');
+      debugPrint('FCM Error during initialize: $e');
     }
+  }
+
+  /// Prompt the user for notification permission and register the FCM
+  /// token. Call this from the Zona Segura wizard's success step (or
+  /// anywhere else the user has just opted into a feature that needs
+  /// alerts).
+  ///
+  /// Returns the resulting [AuthorizationStatus] so the caller can show
+  /// follow-up UI (e.g. "Activa las alertas en ajustes" if denied).
+  ///
+  /// Idempotent — if the user has already granted permission this just
+  /// re-registers the token. If they denied, a second call re-prompts on
+  /// Android but iOS will silently return the existing denial; the user
+  /// has to re-enable in iOS Settings, which the app should surface in a
+  /// follow-up banner.
+  Future<AuthorizationStatus> requestPermissionAndRegister() async {
+    if (kIsWeb) {
+      return AuthorizationStatus.notDetermined;
+    }
+
+    try {
+      final settings = await _messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        provisional: false,
+      );
+
+      if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+          settings.authorizationStatus == AuthorizationStatus.provisional) {
+        debugPrint(
+            'FCM: User granted permission (status=${settings.authorizationStatus})');
+        await _bindToken();
+      } else {
+        debugPrint(
+            'FCM: User declined permission (status=${settings.authorizationStatus})');
+      }
+      return settings.authorizationStatus;
+    } catch (e) {
+      debugPrint('FCM Error during requestPermissionAndRegister: $e');
+      return AuthorizationStatus.notDetermined;
+    }
+  }
+
+  /// Get the current FCM token (if available) and persist it to Firestore.
+  /// Also wires the refresh listener if not already wired.
+  Future<void> _bindToken() async {
+    final token = await _messaging.getToken();
+    if (token != null) {
+      debugPrint('FCM Token: $token');
+      await _firestore.saveFcmToken(token);
+    }
+    _tokenRefreshSub ??= _messaging.onTokenRefresh.listen((newToken) {
+      debugPrint('FCM Token refreshed: $newToken');
+      _firestore.saveFcmToken(newToken);
+    });
+  }
+
+  /// Current notification permission status. Use this to gate UI like
+  /// "tap here to enable alerts in settings" banners.
+  Future<AuthorizationStatus> get permissionStatus async {
+    if (kIsWeb) return AuthorizationStatus.notDetermined;
+    final settings = await _messaging.getNotificationSettings();
+    return settings.authorizationStatus;
   }
 
   /// Wire up foreground + background-tap handlers. Both call into the

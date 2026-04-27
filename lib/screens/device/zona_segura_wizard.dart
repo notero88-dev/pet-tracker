@@ -10,11 +10,13 @@
 //              success → step 4; failure → error variant
 //   Step 4   show detected WiFi + stats, CTA to dismiss
 
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/device.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/device_commands_api.dart';
+import '../../services/fcm_service.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/petti_primitives.dart';
 
@@ -221,6 +223,17 @@ class _ZonaSeguraWizardScreenState extends State<ZonaSeguraWizardScreen> {
       // animation. The user can always re-create the geofence later from
       // the geofences screen if this fails. Errors are logged.
       _ensureTraccarGeofence();
+
+      // Now is the right moment to ask iOS for notification permission.
+      // The user has just configured "alert me when my pet leaves Casa",
+      // so the iOS prompt has narrative context — we expect higher
+      // acceptance than asking at app launch. This is also the only
+      // place that calls requestPermissionAndRegister; if the user
+      // skips Zona Segura entirely they won't be prompted, and the
+      // alert system silently won't run for them. Future work: add a
+      // "habilita las alertas" affordance in the Notifications screen
+      // for users in that state (see fcm_service.permissionStatus).
+      _requestNotificationPermission();
     } else if (result is DeviceCommandError) {
       setState(() {
         _errorMessage = _friendlyError(result);
@@ -290,6 +303,37 @@ class _ZonaSeguraWizardScreenState extends State<ZonaSeguraWizardScreen> {
     } else {
       debugPrint(
           'zona_segura_wizard: created Traccar geofence id=$geofenceId for device $traccarId');
+    }
+  }
+
+  /// Ask iOS / Android for notification permission and register the FCM
+  /// token. Fire-and-forget — a denial here doesn't block anything (push
+  /// notifications just won't arrive until the user enables them in
+  /// system settings). If we wanted to nudge the user back to settings on
+  /// denial we'd surface a Petti banner from here; out of scope for v1.
+  Future<void> _requestNotificationPermission() async {
+    if (!mounted) return;
+    final fcm = Provider.of<FCMService>(context, listen: false);
+    final status = await fcm.requestPermissionAndRegister();
+
+    if (!mounted) return;
+    if (status == AuthorizationStatus.denied) {
+      // The iOS dialog only fires once. If denied here the user has to
+      // re-enable in Settings → PetTrack → Notifications. Surface a quiet
+      // hint via SnackBar so the user knows what happened. Don't break
+      // the success flow.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Activa las notificaciones en Ajustes para recibir alertas.',
+          ),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'OK',
+            onPressed: () {},
+          ),
+        ),
+      );
     }
   }
 
