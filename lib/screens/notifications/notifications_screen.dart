@@ -1,11 +1,30 @@
+// Notifications history — Petti style.
+//
+// Lists every alert the app has received, grouped by day with friendly
+// section headers (HOY, AYER, ESTA SEMANA, "15 ABR"). Tap a row to open
+// AlertDetailScreen (same screen FCM taps go to). Swipe-left to delete.
+//
+// Visual hierarchy:
+//   - Unread row    white surface + Marigold accent stripe on the left
+//                   + bold title + small Marigold dot on the right
+//   - Read row      slightly muted (Sand background) + normal title weight
+//
+// Icon tone matches the alert banner / detail screen so a single alert
+// looks consistent everywhere it's surfaced.
+//
+// The screen reads from NotificationProvider (the same one the FCM
+// service writes to), so the list updates in real time as new pushes
+// arrive. No separate fetch needed.
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
+
 import '../../models/notification.dart';
 import '../../providers/notification_provider.dart';
+import '../../utils/petti_theme.dart';
+import '../alerts/alert_detail_screen.dart';
 import 'notification_settings_screen.dart';
 
-/// Notifications history screen
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
@@ -16,103 +35,101 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   NotificationType? _filterType;
 
+  // ---------------------------------------------------------------- spanish
+  // Localized day-of-week + month-of-year labels. Keeping them inline rather
+  // than pulling a heavy intl dep just for these two arrays.
+  static const _weekdays = [
+    'lunes',
+    'martes',
+    'miércoles',
+    'jueves',
+    'viernes',
+    'sábado',
+    'domingo',
+  ];
+  static const _monthsShort = [
+    'ENE',
+    'FEB',
+    'MAR',
+    'ABR',
+    'MAY',
+    'JUN',
+    'JUL',
+    'AGO',
+    'SEP',
+    'OCT',
+    'NOV',
+    'DIC',
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: PettiColors.cloud,
       appBar: AppBar(
         title: const Text('Notificaciones'),
         actions: [
-          // Filter button
           PopupMenuButton<NotificationType?>(
-            icon: const Icon(Icons.filter_list),
+            icon: const Icon(Icons.tune_rounded),
             tooltip: 'Filtrar',
-            onSelected: (type) {
-              setState(() => _filterType = type);
-            },
+            onSelected: (type) => setState(() => _filterType = type),
             itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: null,
-                child: Text('Todas'),
+              const PopupMenuItem(value: null, child: Text('Todas')),
+              ...NotificationType.values.map(
+                (type) => PopupMenuItem(
+                  value: type,
+                  child: Text(type.displayName),
+                ),
               ),
-              ...NotificationType.values.map((type) => PopupMenuItem(
-                    value: type,
-                    child: Text(type.displayName),
-                  )),
             ],
           ),
-          
-          // Settings button
           IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const NotificationSettingsScreen(),
-                ),
-              );
-            },
+            icon: const Icon(Icons.settings_outlined),
             tooltip: 'Configuración',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const NotificationSettingsScreen(),
+              ),
+            ),
           ),
+          const SizedBox(width: PettiSpacing.s2),
         ],
       ),
       body: Consumer<NotificationProvider>(
-        builder: (context, notificationProvider, child) {
-          if (notificationProvider.isLoading) {
+        builder: (context, provider, _) {
+          if (provider.isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final notifications = _filterType == null
-              ? notificationProvider.notifications
-              : notificationProvider.getNotificationsByType(_filterType!);
+          final all = _filterType == null
+              ? provider.notifications
+              : provider.getNotificationsByType(_filterType!);
 
-          if (notifications.isEmpty) {
-            return _buildEmptyState();
-          }
+          if (all.isEmpty) return _buildEmptyState();
+
+          // Sort newest-first then group by calendar day.
+          final sorted = [...all]
+            ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+          final groups = _groupByDay(sorted);
 
           return Column(
             children: [
-              // Action bar
-              if (notificationProvider.unreadCount > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  color: Colors.grey[100],
-                  child: Row(
-                    children: [
-                      Text(
-                        '${notificationProvider.unreadCount} sin leer',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () =>
-                            notificationProvider.markAllAsRead(),
-                        child: const Text('Marcar todas como leídas'),
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Notifications list
+              if (provider.unreadCount > 0) _buildUnreadBanner(provider),
               Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: notifications.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final notification = notifications[index];
-                    return _buildNotificationCard(
-                      context,
-                      notification,
-                      notificationProvider,
-                    );
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(
+                    PettiSpacing.s4,
+                    PettiSpacing.s4,
+                    PettiSpacing.s4,
+                    // Bottom padding leaves room for the floating "Limpiar
+                    // todo" CTA so the last row isn't hidden behind it.
+                    PettiSpacing.s8,
+                  ),
+                  itemCount: groups.length,
+                  itemBuilder: (context, i) {
+                    final group = groups[i];
+                    return _buildGroup(group, provider);
                   },
                 ),
               ),
@@ -121,200 +138,334 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         },
       ),
       floatingActionButton: Consumer<NotificationProvider>(
-        builder: (context, notificationProvider, child) {
-          if (notificationProvider.notifications.isEmpty) {
-            return const SizedBox.shrink();
-          }
-
+        builder: (context, provider, _) {
+          if (provider.notifications.isEmpty) return const SizedBox.shrink();
           return FloatingActionButton.extended(
-            onPressed: () => _confirmClearAll(notificationProvider),
-            icon: const Icon(Icons.delete_sweep),
-            label: const Text('Limpiar Todo'),
-            backgroundColor: Colors.red,
+            onPressed: () => _confirmClearAll(provider),
+            backgroundColor: PettiColors.midnight,
+            foregroundColor: PettiColors.cloud,
+            icon: const Icon(Icons.delete_sweep_outlined),
+            label: Text(
+              'Limpiar todo',
+              style: PettiText.bodyStrong()
+                  .copyWith(color: PettiColors.cloud, fontSize: 14),
+            ),
           );
         },
       ),
     );
   }
 
+  // -------------------------------------------------------------- empty state
+
   Widget _buildEmptyState() {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(PettiSpacing.s6),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.notifications_none,
-              size: 80,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'Sin Notificaciones',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: PettiColors.sabanaSoft,
+                borderRadius: BorderRadius.circular(PettiRadii.lg),
+              ),
+              child: const Icon(
+                Icons.notifications_none_rounded,
+                size: 56,
+                color: PettiColors.sabana,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: PettiSpacing.s5),
             Text(
               _filterType == null
-                  ? 'No tienes notificaciones aún'
-                  : 'No tienes notificaciones de tipo "${_filterType!.displayName}"',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+                  ? 'Todo tranquilo'
+                  : 'Sin alertas en este filtro',
+              style: PettiText.h2(),
               textAlign: TextAlign.center,
             ),
+            const SizedBox(height: PettiSpacing.s2),
+            Text(
+              _filterType == null
+                  ? 'Cuando algo importante pase con tu mascota,\nlo verás aquí.'
+                  : 'Prueba con otro filtro o quítalo para ver todas las alertas.',
+              style: PettiText.body().copyWith(color: PettiColors.fgDim),
+              textAlign: TextAlign.center,
+            ),
+            if (_filterType != null) ...[
+              const SizedBox(height: PettiSpacing.s5),
+              OutlinedButton(
+                onPressed: () => setState(() => _filterType = null),
+                child: const Text('Ver todas'),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildNotificationCard(
-    BuildContext context,
-    AppNotification notification,
+  // ------------------------------------------------------------ unread banner
+
+  Widget _buildUnreadBanner(NotificationProvider provider) {
+    return Container(
+      width: double.infinity,
+      color: PettiColors.marigoldSoft,
+      padding: const EdgeInsets.symmetric(
+        horizontal: PettiSpacing.s4,
+        vertical: PettiSpacing.s3,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: PettiColors.marigold,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: PettiSpacing.s2),
+          Text(
+            '${provider.unreadCount} sin leer',
+            style: PettiText.bodyStrong().copyWith(fontSize: 14),
+          ),
+          const Spacer(),
+          TextButton(
+            onPressed: () => provider.markAllAsRead(),
+            child: Text(
+              'Marcar todas',
+              style: PettiText.bodyStrong().copyWith(
+                color: PettiColors.midnight,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // -------------------------------------------------- grouping by day
+
+  /// Bucket notifications by calendar day. Order preserved within bucket.
+  List<_DayGroup> _groupByDay(List<AppNotification> sorted) {
+    final groups = <_DayGroup>[];
+    DateTime? currentKey;
+    List<AppNotification>? currentList;
+
+    for (final n in sorted) {
+      final t = n.timestamp.toLocal();
+      final key = DateTime(t.year, t.month, t.day);
+      if (currentKey != key) {
+        currentKey = key;
+        currentList = <AppNotification>[];
+        groups.add(_DayGroup(day: key, items: currentList));
+      }
+      currentList!.add(n);
+    }
+    return groups;
+  }
+
+  Widget _buildGroup(_DayGroup group, NotificationProvider provider) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: PettiSpacing.s5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(
+              left: PettiSpacing.s2,
+              bottom: PettiSpacing.s3,
+            ),
+            child: Text(_dayLabel(group.day), style: PettiText.meta()),
+          ),
+          ...group.items.map((n) => _buildNotificationRow(n, provider)),
+        ],
+      ),
+    );
+  }
+
+  /// Friendly day label: HOY / AYER / weekday for last week / "15 ABR" / "15 ABR 2025"
+  String _dayLabel(DateTime day) {
+    final today = DateTime.now();
+    final start = DateTime(today.year, today.month, today.day);
+    final delta = start.difference(day).inDays;
+    if (delta == 0) return 'HOY';
+    if (delta == 1) return 'AYER';
+    if (delta < 7) {
+      // weekday is 1..7, _weekdays is 0-indexed for monday
+      return _weekdays[day.weekday - 1].toUpperCase();
+    }
+    final monthShort = _monthsShort[day.month - 1];
+    if (day.year == today.year) {
+      return '${day.day} $monthShort';
+    }
+    return '${day.day} $monthShort ${day.year}';
+  }
+
+  // -------------------------------------------------- row card
+
+  Widget _buildNotificationRow(
+    AppNotification n,
     NotificationProvider provider,
   ) {
-    return Dismissible(
-      key: Key(notification.id),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        decoration: BoxDecoration(
-          color: Colors.red,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Icon(
-          Icons.delete,
-          color: Colors.white,
-        ),
-      ),
-      onDismissed: (_) {
-        provider.deleteNotification(notification.id);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Notificación eliminada'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      },
-      child: Card(
-        elevation: notification.isRead ? 0 : 2,
-        color: notification.isRead ? Colors.white : Colors.blue[50],
-        child: InkWell(
-          onTap: () {
-            if (!notification.isRead) {
-              provider.markAsRead(notification.id);
-            }
-            _showNotificationDetails(context, notification);
-          },
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Icon
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: notification.color.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    notification.icon,
-                    color: notification.color,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
+    final tone = _toneFor(n);
+    final isUnread = !n.isRead;
 
-                // Content
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              notification.title,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: notification.isRead
-                                    ? FontWeight.normal
-                                    : FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          if (!notification.isRead)
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: Colors.blue,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        notification.body,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[700],
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.access_time,
-                            size: 14,
-                            color: Colors.grey[500],
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _formatTimestamp(notification.timestamp),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: notification.color.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              notification.type.displayName,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: notification.color,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: PettiSpacing.s2),
+      child: Dismissible(
+        key: ValueKey(n.id),
+        direction: DismissDirection.endToStart,
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: PettiSpacing.s5),
+          decoration: BoxDecoration(
+            color: PettiColors.alertSoft,
+            borderRadius: BorderRadius.circular(PettiRadii.md),
+          ),
+          child: const Icon(
+            Icons.delete_outline_rounded,
+            color: PettiColors.alert,
+          ),
+        ),
+        onDismissed: (_) {
+          provider.deleteNotification(n.id);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Notificación eliminada')),
+          );
+        },
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(PettiRadii.md),
+            onTap: () => _openDetail(n, provider),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isUnread ? Colors.white : PettiColors.sand,
+                borderRadius: BorderRadius.circular(PettiRadii.md),
+                border: Border.all(
+                  color: isUnread
+                      ? PettiColors.borderLightStrong
+                      : PettiColors.borderLight,
+                  width: 1,
                 ),
-              ],
+              ),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Marigold accent stripe on the left edge for unread —
+                    // a quiet visual cue without resorting to a colored
+                    // background that would compete with the icon panel.
+                    if (isUnread)
+                      Container(
+                        width: 4,
+                        decoration: BoxDecoration(
+                          color: PettiColors.marigold,
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(PettiRadii.md),
+                            bottomLeft: Radius.circular(PettiRadii.md),
+                          ),
+                        ),
+                      ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(PettiSpacing.s4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Icon panel with severity tint.
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: tone.iconBg,
+                                borderRadius:
+                                    BorderRadius.circular(PettiRadii.sm),
+                              ),
+                              child: Icon(
+                                _iconFor(n.type),
+                                color: tone.iconColor,
+                                size: 22,
+                              ),
+                            ),
+                            const SizedBox(width: PettiSpacing.s3),
+                            // Title + body + meta row.
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          n.title,
+                                          style: PettiText.bodyStrong()
+                                              .copyWith(
+                                            fontSize: 15,
+                                            fontWeight: isUnread
+                                                ? FontWeight.w700
+                                                : FontWeight.w500,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                          width: PettiSpacing.s2),
+                                      Text(
+                                        _shortTime(n.timestamp),
+                                        style: PettiText.bodySm().copyWith(
+                                          color: PettiColors.fgDim,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    n.body,
+                                    style: PettiText.bodySm()
+                                        .copyWith(color: PettiColors.fgDim),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: PettiSpacing.s2),
+                                  // Type chip — reusing the Petti pill pattern.
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: PettiSpacing.s2,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: tone.iconBg,
+                                      borderRadius: BorderRadius.circular(
+                                          PettiRadii.pill),
+                                    ),
+                                    child: Text(
+                                      n.type.displayName.toUpperCase(),
+                                      style: PettiText.meta().copyWith(
+                                        color: tone.iconColor,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -322,131 +473,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final diff = now.difference(timestamp);
+  // -------------------------------------------------- helpers
 
-    if (diff.inMinutes < 1) {
-      return 'Ahora';
-    } else if (diff.inHours < 1) {
-      return '${diff.inMinutes}m';
-    } else if (diff.inHours < 24) {
-      return '${diff.inHours}h';
-    } else if (diff.inDays < 7) {
-      return '${diff.inDays}d';
-    } else {
-      return DateFormat('dd/MM/yy').format(timestamp);
-    }
+  /// Short time-of-day for the row's right-aligned label. We don't show
+  /// the date — that's already in the section header.
+  String _shortTime(DateTime t) {
+    final local = t.toLocal();
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
   }
 
-  void _showNotificationDetails(
-    BuildContext context,
-    AppNotification notification,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(20),
-          ),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: notification.color.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      notification.icon,
-                      color: notification.color,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          notification.title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          DateFormat('dd/MM/yyyy HH:mm')
-                              .format(notification.timestamp),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Text(
-                notification.body,
-                style: const TextStyle(fontSize: 16),
-              ),
-              if (notification.data != null) ...[
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 16),
-                const Text(
-                  'Detalles:',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ...notification.data!.entries.map((entry) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${entry.key}: ',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              '${entry.value}',
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )),
-              ],
-            ],
-          ),
-        ),
+  void _openDetail(AppNotification n, NotificationProvider provider) {
+    if (!n.isRead) provider.markAsRead(n.id);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AlertDetailScreen(notification: n),
       ),
     );
   }
@@ -454,35 +496,112 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   void _confirmClearAll(NotificationProvider provider) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Limpiar Notificaciones'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Limpiar notificaciones'),
         content: const Text(
-          '¿Estás seguro de eliminar todas las notificaciones?\n\n'
-          'Esta acción no se puede deshacer.',
+          '¿Eliminar todas las notificaciones? Esta acción no se puede deshacer.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
             onPressed: () {
               provider.clearAll();
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Todas las notificaciones eliminadas'),
-                  backgroundColor: Colors.green,
-                ),
+                const SnackBar(content: Text('Notificaciones eliminadas')),
               );
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+              backgroundColor: PettiColors.alert,
+              foregroundColor: Colors.white,
             ),
             child: const Text('Eliminar'),
           ),
         ],
       ),
     );
+  }
+}
+
+// =============================================================================
+// _DayGroup — internal value object for date-grouping
+// =============================================================================
+
+class _DayGroup {
+  final DateTime day;
+  final List<AppNotification> items;
+  _DayGroup({required this.day, required this.items});
+}
+
+// =============================================================================
+// _Tone — same severity → color logic the banner / detail screen use, kept
+// here too so this file is self-contained. The three files share a hand-
+// maintained convention; if a fourth screen needs it, promote to a shared
+// helper in widgets/petti/.
+// =============================================================================
+
+class _Tone {
+  final Color iconBg;
+  final Color iconColor;
+  const _Tone({required this.iconBg, required this.iconColor});
+}
+
+_Tone _toneFor(AppNotification n) {
+  final severity =
+      (n.data?['severity'] as String?) ?? _inferSeverityFor(n.type);
+  switch (severity) {
+    case 'critical':
+      return _Tone(
+        iconBg: PettiColors.alert.withValues(alpha: 0.14),
+        iconColor: PettiColors.alert,
+      );
+    case 'info':
+      return _Tone(
+        iconBg: PettiColors.sabana.withValues(alpha: 0.16),
+        iconColor: PettiColors.sabana,
+      );
+    case 'warning':
+    default:
+      return _Tone(
+        iconBg: PettiColors.marigold.withValues(alpha: 0.18),
+        iconColor: PettiColors.marigoldDim,
+      );
+  }
+}
+
+String _inferSeverityFor(NotificationType t) {
+  switch (t) {
+    case NotificationType.geofenceExit:
+      return 'critical';
+    case NotificationType.geofenceEnter:
+    case NotificationType.deviceOnline:
+      return 'info';
+    case NotificationType.batteryLow:
+    case NotificationType.deviceOffline:
+    case NotificationType.speedAlert:
+    case NotificationType.general:
+      return 'warning';
+  }
+}
+
+IconData _iconFor(NotificationType type) {
+  switch (type) {
+    case NotificationType.geofenceExit:
+      return Icons.directions_run_rounded;
+    case NotificationType.geofenceEnter:
+      return Icons.home_rounded;
+    case NotificationType.batteryLow:
+      return Icons.battery_2_bar_rounded;
+    case NotificationType.deviceOffline:
+      return Icons.signal_wifi_off_rounded;
+    case NotificationType.deviceOnline:
+      return Icons.signal_wifi_4_bar_rounded;
+    case NotificationType.speedAlert:
+      return Icons.speed_rounded;
+    case NotificationType.general:
+      return Icons.notifications_rounded;
   }
 }
