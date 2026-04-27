@@ -1,12 +1,23 @@
+// Setup-first-geofence (onboarding) — Petti restyle.
+//
+// User just got their first GPS fix; this screen lets them drop a circle
+// for "Casa" centered on the current position. Map at the top, Petti
+// bottom sheet with a name field + radius slider + Marigold "Crear" CTA
+// + skip option.
+//
+// Map circle uses Sabana (safe-zone color) instead of legacy green;
+// fixed-position center crosshair becomes a Petti compass marker.
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+
 import '../../models/device.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
+import '../../utils/petti_theme.dart';
 import '../home/home_screen.dart';
 
-/// Setup first geofence screen
 class SetupGeofenceScreen extends StatefulWidget {
   final Device device;
   final String petName;
@@ -24,10 +35,9 @@ class SetupGeofenceScreen extends StatefulWidget {
 }
 
 class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
-  GoogleMapController? _mapController;
-  double _radiusMeters = 100.0; // Default 100m
+  double _radiusMeters = 100.0;
   bool _isCreating = false;
-  String _geofenceName = 'Casa';
+  late TextEditingController _nameController;
 
   late LatLng _center;
   final Set<Circle> _circles = {};
@@ -39,238 +49,230 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       widget.currentPosition.latitude,
       widget.currentPosition.longitude,
     );
+    _nameController = TextEditingController(text: 'Casa');
     _updateCircle();
   }
 
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
   void _updateCircle() {
-    _circles.clear();
-    _circles.add(
-      Circle(
-        circleId: const CircleId('geofence'),
-        center: _center,
-        radius: _radiusMeters,
-        fillColor: const Color(0xFF2D6A4F).withOpacity(0.2),
-        strokeColor: const Color(0xFF2D6A4F),
-        strokeWidth: 2,
-      ),
-    );
+    _circles
+      ..clear()
+      ..add(
+        Circle(
+          circleId: const CircleId('geofence'),
+          center: _center,
+          radius: _radiusMeters,
+          fillColor: PettiColors.sabana.withValues(alpha: 0.18),
+          strokeColor: PettiColors.sabana,
+          strokeWidth: 2,
+        ),
+      );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: PettiColors.cloud,
+      // Floating app-bar effect — translucent over the map.
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Zona Segura'),
+        backgroundColor: PettiColors.cloud.withValues(alpha: 0.85),
+        title: const Text('Tu zona segura'),
         automaticallyImplyLeading: false,
+        elevation: 0,
       ),
       body: Stack(
         children: [
-          // Map
           GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: _center,
-              zoom: 16,
-            ),
+            initialCameraPosition: CameraPosition(target: _center, zoom: 16),
             circles: _circles,
-            markers: {
-              Marker(
-                markerId: const MarkerId('pet'),
-                position: _center,
-                icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueGreen,
-                ),
-              ),
-            },
-            onMapCreated: (controller) {
-              _mapController = controller;
-            },
-            onCameraMove: (position) {
-              // Update center as user moves map
-              setState(() {
-                _center = position.target;
-                _updateCircle();
-              });
-            },
+            onMapCreated: (_) {},
+            onCameraMove: (cam) => setState(() {
+              _center = cam.target;
+              _updateCircle();
+            }),
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
           ),
 
-          // Controls overlay
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
+          // Center crosshair — Marigold pin so it pops against any map style.
+          IgnorePointer(
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: PettiColors.marigold,
+                  shape: BoxShape.circle,
+                  boxShadow: PettiShadows.elevation1,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Header
-                  Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2D6A4F).withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.shield,
-                          color: Color(0xFF2D6A4F),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Crea tu primera zona segura',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              'Recibirás alertas si sale de esta zona',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Name input
-                  TextField(
-                    decoration: const InputDecoration(
-                      labelText: 'Nombre de la zona',
-                      prefixIcon: Icon(Icons.location_on),
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) {
-                      setState(() => _geofenceName = value);
-                    },
-                    controller: TextEditingController(text: _geofenceName),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Radius slider
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Radio de la zona',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          Text(
-                            '${_radiusMeters.toInt()}m',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF2D6A4F),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Slider(
-                        value: _radiusMeters,
-                        min: 50,
-                        max: 500,
-                        divisions: 45,
-                        label: '${_radiusMeters.toInt()}m',
-                        onChanged: (value) {
-                          setState(() {
-                            _radiusMeters = value;
-                            _updateCircle();
-                          });
-                        },
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '50m',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                          Text(
-                            '500m',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Create button
-                  ElevatedButton(
-                    onPressed: _isCreating ? null : _createGeofence,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: _isCreating
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text(
-                            'Crear Zona Segura',
-                            style: TextStyle(fontSize: 16),
-                          ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Skip button
-                  TextButton(
-                    onPressed: _skipToHome,
-                    child: const Text('Omitir por ahora'),
-                  ),
-                ],
+                child: const Icon(
+                  Icons.location_on,
+                  color: PettiColors.midnight,
+                  size: 22,
+                ),
               ),
             ),
           ),
 
-          // Center crosshair
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Center(
-                child: Icon(
-                  Icons.add,
-                  size: 32,
-                  color: Colors.black.withOpacity(0.3),
+          // Bottom sheet — Petti panel with name + radius + CTAs.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: PettiColors.cloud,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(PettiRadii.lg),
+                  ),
+                  boxShadow: PettiShadows.elevation2,
+                ),
+                padding: const EdgeInsets.fromLTRB(
+                  PettiSpacing.s5,
+                  PettiSpacing.s5,
+                  PettiSpacing.s5,
+                  PettiSpacing.s4,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Pull handle
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: PettiColors.fog,
+                          borderRadius: BorderRadius.circular(PettiRadii.pill),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: PettiSpacing.s4),
+
+                    Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: PettiColors.sabanaSoft,
+                            borderRadius: BorderRadius.circular(PettiRadii.sm),
+                          ),
+                          child: const Icon(
+                            Icons.shield_outlined,
+                            color: PettiColors.sabana,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: PettiSpacing.s3),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Tu primera zona segura',
+                                style: PettiText.h4(),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Recibirás una alerta si ${widget.petName} sale de aquí',
+                                style: PettiText.bodySm()
+                                    .copyWith(color: PettiColors.fgDim),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: PettiSpacing.s4),
+
+                    TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre de la zona',
+                        prefixIcon: Icon(Icons.location_on_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: PettiSpacing.s4),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('RADIO', style: PettiText.meta()),
+                        Text(
+                          '${_radiusMeters.toInt()} m',
+                          style: PettiText.number(
+                            size: 16,
+                            weight: FontWeight.w700,
+                          ).copyWith(color: PettiColors.midnight),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: PettiColors.marigold,
+                        inactiveTrackColor: PettiColors.fog,
+                        thumbColor: PettiColors.marigold,
+                        overlayColor:
+                            PettiColors.marigold.withValues(alpha: 0.2),
+                      ),
+                      child: Slider(
+                        value: _radiusMeters,
+                        min: 50,
+                        max: 500,
+                        divisions: 45,
+                        label: '${_radiusMeters.toInt()} m',
+                        onChanged: (value) => setState(() {
+                          _radiusMeters = value;
+                          _updateCircle();
+                        }),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: PettiSpacing.s2),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('50 m',
+                              style: PettiText.bodySm()
+                                  .copyWith(color: PettiColors.fgDim)),
+                          Text('500 m',
+                              style: PettiText.bodySm()
+                                  .copyWith(color: PettiColors.fgDim)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: PettiSpacing.s5),
+
+                    ElevatedButton(
+                      onPressed: _isCreating ? null : _createGeofence,
+                      child: _isCreating
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                valueColor: AlwaysStoppedAnimation(
+                                    PettiColors.midnight),
+                              ),
+                            )
+                          : const Text('Crear zona segura'),
+                    ),
+                    const SizedBox(height: PettiSpacing.s2),
+                    TextButton(
+                      onPressed: _skipToHome,
+                      child: const Text('Omitir por ahora'),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -280,26 +282,26 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     );
   }
 
+  // ----------------------------------------------------------- actions
+
   Future<void> _createGeofence() async {
-    if (_geofenceName.trim().isEmpty) {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
       _showError('Ingresa un nombre para la zona');
       return;
     }
 
     setState(() => _isCreating = true);
-
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
 
     try {
-      // Returns the new geofence id on success or null on failure.
       final geofenceId = await traccar.createCircularGeofence(
-        name: _geofenceName.trim(),
+        name: name,
         latitude: _center.latitude,
         longitude: _center.longitude,
         radiusMeters: _radiusMeters,
         deviceId: widget.device.traccarId!,
       );
-
       if (geofenceId != null) {
         _showSuccess();
       } else {
@@ -308,30 +310,40 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     } catch (e) {
       _showError('Error inesperado: $e');
     } finally {
-      setState(() => _isCreating = false);
+      if (mounted) setState(() => _isCreating = false);
     }
   }
 
   void _showSuccess() {
+    final name = _nameController.text.trim();
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Row(
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
           children: [
-            Icon(Icons.check_circle, color: Colors.green),
-            SizedBox(width: 12),
-            Text('¡Listo!'),
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: PettiColors.sabanaSoft,
+                borderRadius: BorderRadius.circular(PettiRadii.sm),
+              ),
+              child: const Icon(Icons.check_rounded,
+                  color: PettiColors.sabana, size: 20),
+            ),
+            const SizedBox(width: PettiSpacing.s3),
+            const Text('¡Listo!'),
           ],
         ),
         content: Text(
-          'Tu zona segura "$_geofenceName" ha sido creada.\n\n'
+          'Tu zona segura "$name" ha sido creada.\n\n'
           'Recibirás una notificación si ${widget.petName} sale de esta zona.',
         ),
         actions: [
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               _goToHome();
             },
             child: const Text('Ir al inicio'),
@@ -342,30 +354,28 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
   }
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message)),
     );
   }
 
   void _skipToHome() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('¿Omitir zona segura?'),
         content: const Text(
-          'Puedes crear zonas seguras más tarde desde la pantalla principal.',
+          'Puedes crear zonas seguras más tarde desde el menú principal.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               _goToHome();
             },
             child: const Text('Continuar'),
@@ -377,7 +387,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
 
   void _goToHome() {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
       (route) => false,
     );
   }
