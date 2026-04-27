@@ -1,24 +1,47 @@
+// Device detail (live map) — Petti restyle.
+//
+// The most-used screen daily. Layout:
+//   - Full-bleed Google Map (markers + optional history polyline)
+//   - Floating header card at top (back, name + status, EN VIVO pill,
+//     zonas, refresh, gear icon for Petti DeviceSettings)
+//   - Floating bottom info card with address + 3 stat cards + LIVE/
+//     historial action row
+//   - Floating "comandos" FAB (legacy DeviceCommandsSheet shortcut —
+//     left as-is since DeviceSettings already covers most flows)
+//   - History viewer slides up from the bottom when "Historial" is
+//     tapped; the bottom info card hides while it's showing
+//
+// Big visual swaps from the legacy version:
+//   - Hardcoded green #2D6A4F → PettiColors.midnight / sabana
+//   - LIVE pill: red → Marigold (Petti "active state" convention,
+//     not danger). The animated white dot stays for "live" feel.
+//   - Stat cards: legacy grey-fill / bold-black → Sand surface,
+//     PettiText.meta() label, PettiText.number() value
+//   - Battery color helper: Sabana / Marigold / Alert thresholds
+//     instead of pure RGB values
+//   - History trail polyline: Sabana with translucency
+//   - Header + bottom panel use elevation-1 Petti shadow
+
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+
 import '../../models/device.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
 import '../../utils/constants.dart';
-import '../../widgets/position_history_viewer.dart';
+import '../../utils/petti_theme.dart';
 import '../../widgets/device_commands_sheet.dart';
+import '../../widgets/position_history_viewer.dart';
 import '../geofence/geofence_list_screen.dart';
 import 'device_settings_screen.dart';
 
-/// Device detail screen with live map
 class DeviceDetailScreen extends StatefulWidget {
   final Device device;
 
-  const DeviceDetailScreen({
-    super.key,
-    required this.device,
-  });
+  const DeviceDetailScreen({super.key, required this.device});
 
   @override
   State<DeviceDetailScreen> createState() => _DeviceDetailScreenState();
@@ -29,10 +52,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Timer? _updateTimer;
   bool _isLiveMode = false;
   bool _showHistory = false;
-  
+
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
-  
+
   Position? _currentPosition;
   List<Position> _historyPositions = [];
   Position? _selectedHistoryPosition;
@@ -51,6 +74,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     super.dispose();
   }
 
+  // ----------------------------------------------------- data
+
   void _loadCurrentPosition() {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     final position = traccar.getLastPosition(widget.device.traccarId!);
@@ -63,7 +88,6 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   }
 
   void _startNormalUpdates() {
-    // Update every 5 minutes (300 seconds)
     _updateTimer?.cancel();
     _updateTimer = Timer.periodic(
       Duration(seconds: AppConstants.normalUpdateIntervalSeconds),
@@ -72,7 +96,6 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   }
 
   void _startLiveUpdates() {
-    // Update every 10 seconds
     _updateTimer?.cancel();
     _updateTimer = Timer.periodic(
       Duration(seconds: AppConstants.liveUpdateIntervalSeconds),
@@ -83,14 +106,12 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Future<void> _refreshPosition() async {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     await traccar.refreshDevices();
-    
+
     final position = traccar.getLastPosition(widget.device.traccarId!);
     if (position != null && mounted) {
       setState(() {
         _currentPosition = position;
         _updateMarker(position);
-        
-        // Move camera to new position
         if (_mapController != null) {
           _mapController!.animateCamera(
             CameraUpdate.newLatLng(
@@ -108,7 +129,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       Marker(
         markerId: MarkerId('pet-${widget.device.id}'),
         position: LatLng(position.latitude, position.longitude),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        // Marigold-hued marker so the live dot matches the brand.
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          BitmapDescriptor.hueOrange,
+        ),
         infoWindow: InfoWindow(
           title: widget.device.name,
           snippet: position.address ?? position.coordinatesText,
@@ -118,13 +142,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   }
 
   void _toggleLiveMode() {
-    setState(() {
-      _isLiveMode = !_isLiveMode;
-    });
+    setState(() => _isLiveMode = !_isLiveMode);
 
     if (_isLiveMode) {
       _startLiveUpdates();
-      // Request immediate position
       final traccar = Provider.of<TraccarProvider>(context, listen: false);
       traccar.requestPositionNow(widget.device.traccarId!);
     } else {
@@ -132,13 +153,19 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     }
   }
 
+  // ----------------------------------------------------- build
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: PettiColors.cloud,
       floatingActionButton: FloatingActionButton(
-        onPressed: () => DeviceCommandsSheet.show(context, widget.device),
+        onPressed: () =>
+            DeviceCommandsSheet.show(context, widget.device),
+        backgroundColor: PettiColors.midnight,
+        foregroundColor: PettiColors.cloud,
         tooltip: 'Comandos',
-        child: const Icon(Icons.settings_remote),
+        child: const Icon(Icons.settings_remote_outlined),
       ),
       body: Stack(
         children: [
@@ -154,153 +181,41 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   ),
                   markers: _markers,
                   polylines: _polylines,
-                  onMapCreated: (controller) {
-                    _mapController = controller;
-                  },
+                  onMapCreated: (controller) =>
+                      _mapController = controller,
                   myLocationButtonEnabled: true,
                   zoomControlsEnabled: false,
                   compassEnabled: true,
                   mapToolbarEnabled: false,
                 )
-              : const Center(
+              : Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Cargando ubicación...'),
+                      const SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      ),
+                      const SizedBox(height: PettiSpacing.s4),
+                      Text(
+                        'Cargando ubicación…',
+                        style: PettiText.body()
+                            .copyWith(color: PettiColors.fgDim),
+                      ),
                     ],
                   ),
                 ),
 
-          // Top app bar
+          // Top header card
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: SafeArea(
-              child: Container(
-                margin: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            widget.device.name,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            widget.device.statusText,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: widget.device.isOnline
-                                  ? Colors.green
-                                  : Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // LIVE mode indicator
-                    if (_isLiveMode)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            const Text(
-                              'EN VIVO',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.shield),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => GeofenceListScreen(device: widget.device),
-                          ),
-                        );
-                      },
-                      tooltip: 'Zonas Seguras',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh),
-                      onPressed: _refreshPosition,
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.settings_outlined),
-                      tooltip: 'Ajustes del dispositivo',
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => DeviceSettingsScreen(
-                              device: widget.device,
-                              petName: widget.device.name,
-                              isOnline: _currentPosition != null,
-                              lastSeen: _currentPosition?.deviceTime,
-                              batteryPercent:
-                                  _currentPosition?.attributes?['batteryLevel']
-                                          as int? ??
-                                      80,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            child: SafeArea(child: _buildHeader()),
           ),
 
-          // History viewer (replaces bottom panel when active)
+          // History viewer (when active)
           if (_showHistory)
             Positioned(
               bottom: 0,
@@ -316,132 +231,257 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               ),
             ),
 
-          // Bottom info panel (hidden when history is showing)
+          // Bottom info panel (when not showing history)
           if (_currentPosition != null && !_showHistory)
             Positioned(
               bottom: 0,
               left: 0,
               right: 0,
-              child: SafeArea(
-                child: Container(
-                  margin: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, -2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Position info
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            // Address or coordinates
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.location_on,
-                                  color: Color(0xFF2D6A4F),
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _currentPosition!.address ??
-                                        _currentPosition!.coordinatesText,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
+              child: SafeArea(child: _buildBottomPanel()),
+            ),
+        ],
+      ),
+    );
+  }
 
-                            // Stats grid
-                            Row(
-                              children: [
-                                _buildStatCard(
-                                  icon: Icons.access_time,
-                                  label: 'Actualizado',
-                                  value: _formatTimestamp(
-                                    _currentPosition!.deviceTime,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                _buildStatCard(
-                                  icon: Icons.speed,
-                                  label: 'Velocidad',
-                                  value: _currentPosition!.speedText,
-                                ),
-                                const SizedBox(width: 8),
-                                if (_currentPosition!.batteryLevel != null)
-                                  _buildStatCard(
-                                    icon: Icons.battery_charging_full,
-                                    label: 'Batería',
-                                    value: '${_currentPosition!.batteryLevel}%',
-                                    valueColor: _getBatteryColor(
-                                      _currentPosition!.batteryLevel!,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+  // ----------------------------------------------------- header card
 
-                      // Action buttons
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          borderRadius: const BorderRadius.vertical(
-                            bottom: Radius.circular(16),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _toggleLiveMode,
-                                icon: Icon(
-                                  _isLiveMode ? Icons.stop : Icons.play_arrow,
-                                ),
-                                label: Text(
-                                  _isLiveMode ? 'Detener LIVE' : 'Modo LIVE',
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: _isLiveMode
-                                      ? Colors.red
-                                      : const Color(0xFF2D6A4F),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _showHistory ? _closeHistory : _loadHistory,
-                                icon: Icon(_showHistory ? Icons.close : Icons.history),
-                                label: Text(_showHistory ? 'Cerrar' : 'Historial'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+  Widget _buildHeader() {
+    return Container(
+      margin: const EdgeInsets.all(PettiSpacing.s4),
+      decoration: BoxDecoration(
+        color: PettiColors.cloud,
+        borderRadius: BorderRadius.circular(PettiRadii.md),
+        boxShadow: PettiShadows.elevation1,
+        border: Border.all(color: PettiColors.borderLight),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.device.name,
+                  style: PettiText.h4(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  widget.device.statusText,
+                  style: PettiText.bodySm().copyWith(
+                    color: widget.device.isOnline
+                        ? PettiColors.sabana
+                        : PettiColors.fgDim,
+                    fontWeight: FontWeight.w600,
                   ),
+                ),
+              ],
+            ),
+          ),
+          if (_isLiveMode)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: PettiSpacing.s3,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: PettiColors.marigold,
+                borderRadius: BorderRadius.circular(PettiRadii.pill),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: PettiColors.midnight,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'EN VIVO',
+                    style: PettiText.meta().copyWith(
+                      color: PettiColors.midnight,
+                      letterSpacing: 0.04 * 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(width: PettiSpacing.s2),
+          IconButton(
+            icon: const Icon(Icons.shield_outlined),
+            tooltip: 'Zonas seguras',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    GeofenceListScreen(device: widget.device),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _refreshPosition,
+            tooltip: 'Actualizar',
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Ajustes del dispositivo',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => DeviceSettingsScreen(
+                  device: widget.device,
+                  petName: widget.device.name,
+                  isOnline: _currentPosition != null,
+                  lastSeen: _currentPosition?.deviceTime,
+                  batteryPercent: _currentPosition
+                          ?.attributes?['batteryLevel'] as int? ??
+                      80,
                 ),
               ),
             ),
+          ),
+          const SizedBox(width: PettiSpacing.s1),
+        ],
+      ),
+    );
+  }
+
+  // ----------------------------------------------------- bottom panel
+
+  Widget _buildBottomPanel() {
+    final pos = _currentPosition!;
+    return Container(
+      margin: const EdgeInsets.all(PettiSpacing.s4),
+      decoration: BoxDecoration(
+        color: PettiColors.cloud,
+        borderRadius: BorderRadius.circular(PettiRadii.md),
+        boxShadow: PettiShadows.elevation1,
+        border: Border.all(color: PettiColors.borderLight),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(PettiSpacing.s4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      color: PettiColors.sabana,
+                      size: 20,
+                    ),
+                    const SizedBox(width: PettiSpacing.s2),
+                    Expanded(
+                      child: Text(
+                        pos.address ?? pos.coordinatesText,
+                        style: PettiText.bodyStrong()
+                            .copyWith(fontSize: 14),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: PettiSpacing.s3),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildStatCard(
+                        icon: Icons.access_time_rounded,
+                        label: 'Actualizado',
+                        value: _formatTimestamp(pos.deviceTime),
+                      ),
+                    ),
+                    const SizedBox(width: PettiSpacing.s2),
+                    Expanded(
+                      child: _buildStatCard(
+                        icon: Icons.speed_rounded,
+                        label: 'Velocidad',
+                        value: pos.speedText,
+                      ),
+                    ),
+                    if (pos.batteryLevel != null) ...[
+                      const SizedBox(width: PettiSpacing.s2),
+                      Expanded(
+                        child: _buildStatCard(
+                          icon: Icons.battery_charging_full_rounded,
+                          label: 'Batería',
+                          value: '${pos.batteryLevel}%',
+                          valueColor:
+                              _batteryColor(pos.batteryLevel!),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Action row — Sand surface, two equal-width buttons.
+          Container(
+            padding: const EdgeInsets.all(PettiSpacing.s3),
+            decoration: const BoxDecoration(
+              color: PettiColors.sand,
+              borderRadius: BorderRadius.vertical(
+                bottom: Radius.circular(PettiRadii.md),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _toggleLiveMode,
+                    icon: Icon(
+                      _isLiveMode
+                          ? Icons.stop_rounded
+                          : Icons.play_arrow_rounded,
+                    ),
+                    label: Text(
+                      _isLiveMode ? 'Detener' : 'Modo LIVE',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _isLiveMode
+                          ? PettiColors.alert
+                          : PettiColors.midnight,
+                      side: BorderSide(
+                        color: _isLiveMode
+                            ? PettiColors.alert
+                            : PettiColors.midnight,
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: PettiSpacing.s2),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _showHistory ? _closeHistory : _loadHistory,
+                    icon: Icon(
+                      _showHistory
+                          ? Icons.close_rounded
+                          : Icons.history_rounded,
+                    ),
+                    label:
+                        Text(_showHistory ? 'Cerrar' : 'Historial'),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -453,66 +493,54 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     required String value,
     Color? valueColor,
   }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.grey[50],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 16, color: Colors.grey[600]),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey[600],
-              ),
+    return Container(
+      padding: const EdgeInsets.all(PettiSpacing.s3),
+      decoration: BoxDecoration(
+        color: PettiColors.sand,
+        borderRadius: BorderRadius.circular(PettiRadii.sm),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: PettiColors.fgDim),
+          const SizedBox(height: 4),
+          Text(label.toUpperCase(),
+              style: PettiText.meta().copyWith(fontSize: 10)),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: PettiText.number(size: 14, weight: FontWeight.w700)
+                .copyWith(
+              color: valueColor ?? PettiColors.midnight,
             ),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: valueColor ?? Colors.black,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   String _formatTimestamp(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
+    final diff = DateTime.now().difference(dt);
+    if (diff.inSeconds < 60) return 'Ahora';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    return '${diff.inDays}d';
+  }
 
-    if (diff.inSeconds < 60) {
-      return 'Ahora';
-    } else if (diff.inMinutes < 60) {
-      return '${diff.inMinutes}m';
-    } else if (diff.inHours < 24) {
-      return '${diff.inHours}h';
-    } else {
-      return '${diff.inDays}d';
+  Color _batteryColor(int level) {
+    if (level >= 60) return PettiColors.sabana;
+    if (level >= AppConstants.batteryLowThreshold) {
+      return PettiColors.marigoldDim;
     }
+    return PettiColors.alert;
   }
 
-  Color _getBatteryColor(int level) {
-    if (level >= 60) return Colors.green;
-    if (level >= AppConstants.batteryLowThreshold) return Colors.orange;
-    return Colors.red;
-  }
+  // ----------------------------------------------------- history
 
   Future<void> _loadHistory() async {
-    // Load last 24 hours of history
     final now = DateTime.now();
     final yesterday = now.subtract(const Duration(hours: 24));
-    
+
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     final history = await traccar.loadPositionHistory(
       deviceId: widget.device.traccarId!,
@@ -520,35 +548,33 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       to: now,
     );
 
-    if (mounted) {
-      setState(() {
-        _historyPositions = history;
-        _showHistory = true;
-        _drawHistoryTrail();
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _historyPositions = history;
+      _showHistory = true;
+      _drawHistoryTrail();
+    });
   }
 
   void _drawHistoryTrail() {
     if (_historyPositions.isEmpty) return;
 
-    // Create polyline from history
     final points = _historyPositions
         .map((p) => LatLng(p.latitude, p.longitude))
         .toList();
 
-    _polylines.clear();
-    _polylines.add(
-      Polyline(
-        polylineId: const PolylineId('history_trail'),
-        points: points,
-        color: const Color(0xFF2D6A4F).withOpacity(0.6),
-        width: 4,
-        geodesic: true,
-      ),
-    );
+    _polylines
+      ..clear()
+      ..add(
+        Polyline(
+          polylineId: const PolylineId('history_trail'),
+          points: points,
+          color: PettiColors.sabana.withValues(alpha: 0.7),
+          width: 4,
+          geodesic: true,
+        ),
+      );
 
-    // Add markers for start and end
     if (_historyPositions.length > 1) {
       final start = _historyPositions.last;
       final end = _historyPositions.first;
@@ -557,7 +583,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         Marker(
           markerId: const MarkerId('history_start'),
           position: LatLng(start.latitude, start.longitude),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueAzure,
+          ),
           infoWindow: const InfoWindow(title: 'Inicio'),
         ),
       );
@@ -566,13 +594,14 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         Marker(
           markerId: const MarkerId('history_end'),
           position: LatLng(end.latitude, end.longitude),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueOrange,
+          ),
           infoWindow: const InfoWindow(title: 'Actual'),
         ),
       );
     }
 
-    // Fit bounds to show all positions
     if (_mapController != null && _historyPositions.length > 1) {
       final bounds = _calculateBounds(_historyPositions);
       _mapController!.animateCamera(
@@ -583,14 +612,12 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
   LatLngBounds _calculateBounds(List<Position> positions) {
     double? minLat, maxLat, minLng, maxLng;
-
-    for (var pos in positions) {
+    for (final pos in positions) {
       if (minLat == null || pos.latitude < minLat) minLat = pos.latitude;
       if (maxLat == null || pos.latitude > maxLat) maxLat = pos.latitude;
       if (minLng == null || pos.longitude < minLng) minLng = pos.longitude;
       if (maxLng == null || pos.longitude > maxLng) maxLng = pos.longitude;
     }
-
     return LatLngBounds(
       southwest: LatLng(minLat!, minLng!),
       northeast: LatLng(maxLat!, maxLng!),
@@ -600,21 +627,20 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   void _onHistoryPositionSelected(Position position) {
     setState(() {
       _selectedHistoryPosition = position;
-      
-      // Move camera to selected position
       _mapController?.animateCamera(
         CameraUpdate.newLatLng(
           LatLng(position.latitude, position.longitude),
         ),
       );
-
-      // Add temporary marker for selected position
-      _markers.removeWhere((m) => m.markerId.value == 'selected_history');
+      _markers
+          .removeWhere((m) => m.markerId.value == 'selected_history');
       _markers.add(
         Marker(
           markerId: const MarkerId('selected_history'),
           position: LatLng(position.latitude, position.longitude),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueYellow,
+          ),
           infoWindow: InfoWindow(
             title: 'Posición seleccionada',
             snippet: position.address ?? position.coordinatesText,
@@ -630,8 +656,6 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       _historyPositions = [];
       _selectedHistoryPosition = null;
       _polylines.clear();
-      
-      // Restore current position marker
       if (_currentPosition != null) {
         _updateMarker(_currentPosition!);
       }
