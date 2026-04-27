@@ -1,20 +1,29 @@
+// Onboarding step — pet profile setup. Petti restyle.
+//
+// User just provisioned a device, lands here to give the pet a name and
+// type plus a photo. On Continuar we call provisioning-api, link the
+// Firebase user, and navigate to FirstPositionScreen.
+//
+// Layout: hero panel (Marigold-soft square w/ paw) → tagline → photo
+// picker (Marigold ring) → form fields → IMEI display in a Sand pill →
+// Marigold continue button.
+
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+
 import '../../providers/auth_provider.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/firestore_service.dart';
+import '../../utils/petti_theme.dart';
 import 'first_position_screen.dart';
 
-/// Pet profile setup screen
 class PetProfileScreen extends StatefulWidget {
   final String imei;
 
-  const PetProfileScreen({
-    super.key,
-    required this.imei,
-  });
+  const PetProfileScreen({super.key, required this.imei});
 
   @override
   State<PetProfileScreen> createState() => _PetProfileScreenState();
@@ -24,7 +33,7 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _petNameController = TextEditingController();
   final _deviceNameController = TextEditingController();
-  
+
   String _petType = 'dog';
   File? _petPhoto;
   bool _isLoading = false;
@@ -34,102 +43,66 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
   @override
   void initState() {
     super.initState();
-    // Pre-fill device name with IMEI last 6 digits
     _deviceNameController.text = 'GPS-${widget.imei.substring(9, 15)}';
+  }
+
+  @override
+  void dispose() {
+    _petNameController.dispose();
+    _deviceNameController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Perfil de tu Mascota'),
-      ),
+      backgroundColor: PettiColors.cloud,
+      appBar: AppBar(title: const Text('Tu mascota')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(PettiSpacing.s5),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header
-              const Icon(
-                Icons.pets,
-                size: 64,
-                color: Color(0xFF2D6A4F),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '¡Casi listo!',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Cuéntanos sobre tu mascota para personalizar su experiencia',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-
-              // Photo picker
+              const SizedBox(height: PettiSpacing.s2),
               Center(
-                child: GestureDetector(
-                  onTap: _pickPhoto,
-                  child: Container(
-                    width: 120,
-                    height: 120,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0xFF2D6A4F),
-                        width: 2,
-                      ),
-                    ),
-                    child: _petPhoto != null
-                        ? ClipOval(
-                            child: Image.file(
-                              _petPhoto!,
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                        : const Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.add_a_photo,
-                                size: 32,
-                                color: Color(0xFF2D6A4F),
-                              ),
-                              SizedBox(height: 8),
-                              Text(
-                                'Agregar foto',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF2D6A4F),
-                                ),
-                              ),
-                            ],
-                          ),
+                child: Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    color: PettiColors.marigoldSoft,
+                    borderRadius: BorderRadius.circular(PettiRadii.lg),
+                  ),
+                  child: const Icon(
+                    Icons.pets,
+                    size: 44,
+                    color: PettiColors.marigold,
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: PettiSpacing.s4),
+              Text('¡Casi listo!',
+                  style: PettiText.h1(), textAlign: TextAlign.center),
+              const SizedBox(height: PettiSpacing.s2),
+              Text(
+                'Cuéntanos sobre tu mascota para personalizar la experiencia.',
+                style:
+                    PettiText.body().copyWith(color: PettiColors.fgDim),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: PettiSpacing.s6),
 
-              // Pet name
+              Center(child: _buildPhotoPicker()),
+              const SizedBox(height: PettiSpacing.s6),
+
               TextFormField(
                 controller: _petNameController,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
                   labelText: 'Nombre de tu mascota *',
-                  hintText: 'Ej: Firulais',
-                  prefixIcon: Icon(Icons.pets),
-                  border: OutlineInputBorder(),
+                  hintText: 'Ej: Buddy',
+                  prefixIcon: Icon(Icons.pets_outlined),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -138,37 +111,31 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: PettiSpacing.s4),
 
-              // Pet type
               DropdownButtonFormField<String>(
                 value: _petType,
                 decoration: const InputDecoration(
                   labelText: 'Tipo de mascota *',
-                  prefixIcon: Icon(Icons.category),
-                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.category_outlined),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'dog', child: Text('🐕 Perro')),
-                  DropdownMenuItem(value: 'cat', child: Text('🐈 Gato')),
-                  DropdownMenuItem(value: 'other', child: Text('🐾 Otro')),
+                  DropdownMenuItem(value: 'dog', child: Text('🐕  Perro')),
+                  DropdownMenuItem(value: 'cat', child: Text('🐈  Gato')),
+                  DropdownMenuItem(value: 'other', child: Text('🐾  Otro')),
                 ],
                 onChanged: (value) {
-                  if (value != null) {
-                    setState(() => _petType = value);
-                  }
+                  if (value != null) setState(() => _petType = value);
                 },
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: PettiSpacing.s4),
 
-              // Device name
               TextFormField(
                 controller: _deviceNameController,
                 decoration: const InputDecoration(
                   labelText: 'Nombre del dispositivo',
-                  hintText: 'Ej: GPS-Firulais',
-                  prefixIcon: Icon(Icons.gps_fixed),
-                  border: OutlineInputBorder(),
+                  hintText: 'Ej: GPS-Buddy',
+                  prefixIcon: Icon(Icons.gps_fixed_outlined),
                   helperText: 'Identificador interno del rastreador',
                 ),
                 validator: (value) {
@@ -178,55 +145,52 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: PettiSpacing.s3),
 
-              // IMEI display
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: PettiSpacing.s3,
+                  vertical: PettiSpacing.s2,
+                ),
                 decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
+                  color: PettiColors.sand,
+                  borderRadius: BorderRadius.circular(PettiRadii.sm),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.tag, size: 20, color: Colors.grey),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'IMEI:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      widget.imei,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 14,
+                    const Icon(Icons.tag_outlined,
+                        size: 18, color: PettiColors.fgDim),
+                    const SizedBox(width: PettiSpacing.s2),
+                    Text('IMEI:',
+                        style: PettiText.label()
+                            .copyWith(color: PettiColors.fgDim)),
+                    const SizedBox(width: PettiSpacing.s2),
+                    Expanded(
+                      child: Text(
+                        widget.imei,
+                        style:
+                            PettiText.number(size: 13, weight: FontWeight.w600),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 32),
 
-              // Submit button
+              const SizedBox(height: PettiSpacing.s6),
+
               ElevatedButton(
                 onPressed: _isLoading ? null : _handleSubmit,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
                 child: _isLoading
                     ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation(
+                              PettiColors.midnight),
+                        ),
                       )
-                    : const Text(
-                        'Continuar',
-                        style: TextStyle(fontSize: 16),
-                      ),
+                    : const Text('Continuar'),
               ),
             ],
           ),
@@ -235,18 +199,52 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
     );
   }
 
+  Widget _buildPhotoPicker() {
+    return GestureDetector(
+      onTap: _pickPhoto,
+      child: Container(
+        width: 120,
+        height: 120,
+        decoration: BoxDecoration(
+          color: PettiColors.marigoldSoft,
+          shape: BoxShape.circle,
+          border: Border.all(color: PettiColors.marigold, width: 2),
+        ),
+        child: _petPhoto != null
+            ? ClipOval(
+                child: Image.file(_petPhoto!, fit: BoxFit.cover),
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.add_a_photo_outlined,
+                    size: 30,
+                    color: PettiColors.midnight,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Agregar foto',
+                    style: PettiText.label().copyWith(
+                      color: PettiColors.midnight,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
   Future<void> _pickPhoto() async {
-    final XFile? image = await _picker.pickImage(
+    final image = await _picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 1024,
       maxHeight: 1024,
       imageQuality: 85,
     );
-
     if (image != null) {
-      setState(() {
-        _petPhoto = File(image.path);
-      });
+      setState(() => _petPhoto = File(image.path));
     }
   }
 
@@ -256,7 +254,8 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
     setState(() => _isLoading = true);
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final traccarProvider = Provider.of<TraccarProvider>(context, listen: false);
+    final traccarProvider =
+        Provider.of<TraccarProvider>(context, listen: false);
 
     final userId = authProvider.currentUser?.uid;
     if (userId == null) {
@@ -266,15 +265,13 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
     }
 
     try {
-      // Get user email
       final userEmail = authProvider.currentUser?.email;
       if (userEmail == null) {
-        _showError('Error: No se pudo obtener el correo del usuario');
+        _showError('Error: no se pudo obtener el correo del usuario');
         setState(() => _isLoading = false);
         return;
       }
 
-      // Provision device
       final device = await traccarProvider.provisionDevice(
         imei: widget.imei,
         deviceName: _deviceNameController.text.trim(),
@@ -285,19 +282,15 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
       );
 
       if (device == null) {
-        _showError(traccarProvider.errorMessage ?? 'Error al aprovisionar dispositivo');
+        _showError(traccarProvider.errorMessage ??
+            'Error al aprovisionar dispositivo');
         setState(() => _isLoading = false);
         return;
       }
 
-      // Save pet profile to Firestore
       final firestoreService = FirestoreService();
-      
-      // TODO: Upload pet photo to Firebase Storage first
+      // TODO: upload pet photo to Firebase Storage first.
       String? photoUrl;
-      // if (_petPhoto != null) {
-      //   photoUrl = await uploadPhoto(_petPhoto!);
-      // }
 
       await firestoreService.createPet(
         name: _petNameController.text.trim(),
@@ -306,47 +299,35 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
         deviceImei: widget.imei,
         photoUrl: photoUrl,
       );
-      
-      // Save Traccar credentials to Firestore for future logins
+
       final credentials = traccarProvider.getLastProvisionedCredentials();
       if (credentials != null) {
         await firestoreService.updateUserProfile(userId, {
           'traccarEmail': credentials['email'],
-          'traccarPassword': credentials['password'], // TODO: Encrypt this!
+          'traccarPassword': credentials['password'], // TODO: encrypt
         });
       }
 
-      // Navigate to first position screen
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => FirstPositionScreen(
-              device: device,
-              petName: _petNameController.text.trim(),
-            ),
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FirstPositionScreen(
+            device: device,
+            petName: _petNameController.text.trim(),
           ),
-        );
-      }
+        ),
+      );
     } catch (e) {
       _showError('Error inesperado: $e');
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message)),
     );
-  }
-
-  @override
-  void dispose() {
-    _petNameController.dispose();
-    _deviceNameController.dispose();
-    super.dispose();
   }
 }

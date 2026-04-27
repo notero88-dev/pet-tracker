@@ -1,16 +1,23 @@
+// Pet profile (post-onboarding edit) — Petti restyle.
+//
+// Form for editing pet name / type / breed / weight / notes plus a card
+// showing the linked GPS device (read-only). Visual swap: Cloud bg,
+// Marigold pet-photo ring (matches the Petti brand mark), section eyebrow
+// in PettiText.meta, device card uses PettiCard, SnackBars use defaults.
+
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../models/device.dart';
 
-/// Pet profile management screen
+import '../../models/device.dart';
+import '../../utils/petti_theme.dart';
+import '../../widgets/petti/petti_primitives.dart';
+
 class PetProfileScreen extends StatefulWidget {
   final Device device;
 
-  const PetProfileScreen({
-    super.key,
-    required this.device,
-  });
+  const PetProfileScreen({super.key, required this.device});
 
   @override
   State<PetProfileScreen> createState() => _PetProfileScreenState();
@@ -36,7 +43,7 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
     _breedController = TextEditingController();
     _weightController = TextEditingController();
     _notesController = TextEditingController();
-    // TODO: Load pet data from Firestore
+    // TODO: load pet data from Firestore.
   }
 
   @override
@@ -51,86 +58,35 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: PettiColors.cloud,
       appBar: AppBar(
-        title: const Text('Perfil de Mascota'),
+        title: const Text('Perfil de mascota'),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _saveProfile,
-            child: const Text(
-              'Guardar',
-              style: TextStyle(color: Colors.white),
-            ),
+            child: const Text('Guardar'),
           ),
+          const SizedBox(width: PettiSpacing.s2),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(PettiSpacing.s5),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Pet photo
-              Center(
-                child: GestureDetector(
-                  onTap: _pickPhoto,
-                  child: Stack(
-                    children: [
-                      Container(
-                        width: 140,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: const Color(0xFF2D6A4F),
-                            width: 3,
-                          ),
-                        ),
-                        child: _petPhoto != null
-                            ? ClipOval(
-                                child: Image.file(
-                                  _petPhoto!,
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.pets,
-                                size: 64,
-                                color: Color(0xFF2D6A4F),
-                              ),
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF2D6A4F),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            color: Colors.white,
-                            size: 22,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
+              const SizedBox(height: PettiSpacing.s2),
+              Center(child: _buildAvatar()),
+              const SizedBox(height: PettiSpacing.s6),
 
-              // Pet name
               TextFormField(
                 controller: _petNameController,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
                   labelText: 'Nombre *',
-                  hintText: 'Ej: Firulais',
-                  prefixIcon: Icon(Icons.pets),
-                  border: OutlineInputBorder(),
+                  hintText: 'Ej: Buddy',
+                  prefixIcon: Icon(Icons.pets_outlined),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -139,144 +95,115 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: PettiSpacing.s4),
 
-              // Pet type
               DropdownButtonFormField<String>(
                 value: _petType,
                 decoration: const InputDecoration(
-                  labelText: 'Tipo de Mascota *',
-                  prefixIcon: Icon(Icons.category),
-                  border: OutlineInputBorder(),
+                  labelText: 'Tipo *',
+                  prefixIcon: Icon(Icons.category_outlined),
                 ),
                 items: const [
-                  DropdownMenuItem(value: 'dog', child: Text('🐕 Perro')),
-                  DropdownMenuItem(value: 'cat', child: Text('🐈 Gato')),
-                  DropdownMenuItem(value: 'other', child: Text('🐾 Otro')),
+                  DropdownMenuItem(value: 'dog', child: Text('🐕  Perro')),
+                  DropdownMenuItem(value: 'cat', child: Text('🐈  Gato')),
+                  DropdownMenuItem(value: 'other', child: Text('🐾  Otro')),
                 ],
                 onChanged: (value) {
-                  if (value != null) {
-                    setState(() => _petType = value);
-                  }
+                  if (value != null) setState(() => _petType = value);
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: PettiSpacing.s4),
 
-              // Breed
               TextFormField(
                 controller: _breedController,
                 decoration: const InputDecoration(
                   labelText: 'Raza',
                   hintText: 'Ej: Labrador',
-                  prefixIcon: Icon(Icons.format_list_bulleted),
-                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.format_list_bulleted_outlined),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: PettiSpacing.s4),
 
-              // Weight
               TextFormField(
                 controller: _weightController,
+                keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
-                  labelText: 'Peso (kg)',
+                  labelText: 'Peso',
                   hintText: 'Ej: 15',
-                  prefixIcon: Icon(Icons.scale),
-                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.monitor_weight_outlined),
                   suffixText: 'kg',
                 ),
-                keyboardType: TextInputType.number,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: PettiSpacing.s4),
 
-              // Notes
               TextFormField(
                 controller: _notesController,
+                maxLines: 4,
                 decoration: const InputDecoration(
                   labelText: 'Notas',
-                  hintText: 'Información adicional, comportamiento, salud, etc.',
-                  prefixIcon: Icon(Icons.notes),
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 4,
-              ),
-              const SizedBox(height: 32),
-
-              // Device info section
-              const Divider(),
-              const SizedBox(height: 16),
-              const Text(
-                'Dispositivo GPS',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  hintText:
+                      'Información adicional, comportamiento, salud, etc.',
+                  prefixIcon: Icon(Icons.sticky_note_2_outlined),
                 ),
               ),
-              const SizedBox(height: 16),
 
-              // Device card
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildInfoRow(
-                        Icons.gps_fixed,
-                        'Nombre',
-                        widget.device.name,
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoRow(
-                        Icons.tag,
-                        'IMEI',
-                        widget.device.uniqueId,
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoRow(
-                        Icons.circle,
-                        'Estado',
-                        widget.device.statusText,
-                      ),
-                    ],
-                  ),
+              const SizedBox(height: PettiSpacing.s6),
+              Padding(
+                padding: const EdgeInsets.only(left: PettiSpacing.s2),
+                child: Text('DISPOSITIVO GPS', style: PettiText.meta()),
+              ),
+              const SizedBox(height: PettiSpacing.s2),
+              PettiCard(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.all(PettiSpacing.s4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _infoRow(Icons.gps_fixed_outlined, 'Nombre',
+                        widget.device.name),
+                    const SizedBox(height: PettiSpacing.s3),
+                    _infoRow(Icons.tag_outlined, 'IMEI',
+                        widget.device.uniqueId),
+                    const SizedBox(height: PettiSpacing.s3),
+                    _infoRow(
+                      widget.device.isOnline
+                          ? Icons.wifi_rounded
+                          : Icons.wifi_off_rounded,
+                      'Estado',
+                      widget.device.statusText,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 32),
 
-              // Save button
+              const SizedBox(height: PettiSpacing.s6),
+
               ElevatedButton(
                 onPressed: _isLoading ? null : _saveProfile,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 56),
-                ),
                 child: _isLoading
                     ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation(
+                              PettiColors.midnight),
+                        ),
                       )
-                    : const Text(
-                        'Guardar Cambios',
-                        style: TextStyle(fontSize: 16),
-                      ),
+                    : const Text('Guardar cambios'),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: PettiSpacing.s3),
 
-              // Activity history button
               OutlinedButton.icon(
-                onPressed: () {
-                  // TODO: Navigate to activity history
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Historial de actividad disponible próximamente'),
+                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Historial de actividad disponible próximamente',
                     ),
-                  );
-                },
-                icon: const Icon(Icons.history),
-                label: const Text('Ver Historial de Actividad'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
+                  ),
                 ),
+                icon: const Icon(Icons.history_outlined),
+                label: const Text('Ver historial de actividad'),
               ),
             ],
           ),
@@ -285,24 +212,72 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value) {
+  Widget _buildAvatar() {
+    return GestureDetector(
+      onTap: _pickPhoto,
+      child: Stack(
+        children: [
+          Container(
+            width: 140,
+            height: 140,
+            decoration: BoxDecoration(
+              color: _petPhoto == null ? PettiColors.marigoldSoft : null,
+              shape: BoxShape.circle,
+              border: Border.all(color: PettiColors.marigold, width: 3),
+            ),
+            child: _petPhoto != null
+                ? ClipOval(
+                    child:
+                        Image.file(_petPhoto!, fit: BoxFit.cover),
+                  )
+                : const Icon(
+                    Icons.pets,
+                    size: 64,
+                    color: PettiColors.midnight,
+                  ),
+          ),
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Material(
+              color: PettiColors.marigold,
+              shape: const CircleBorder(side: BorderSide(
+                color: PettiColors.cloud,
+                width: 2,
+              )),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _pickPhoto,
+                child: const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Icon(
+                    Icons.camera_alt_outlined,
+                    color: PettiColors.midnight,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(icon, size: 20, color: Colors.grey[600]),
-        const SizedBox(width: 12),
-        Text(
-          '$label:',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey[700],
-          ),
-        ),
-        const SizedBox(width: 8),
+        Icon(icon, size: 18, color: PettiColors.fgDim),
+        const SizedBox(width: PettiSpacing.s3),
+        Text('$label:',
+            style: PettiText.label().copyWith(color: PettiColors.fgDim)),
+        const SizedBox(width: PettiSpacing.s2),
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(fontSize: 14),
+            style: PettiText.bodyStrong().copyWith(fontSize: 14),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -310,55 +285,35 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
   }
 
   Future<void> _pickPhoto() async {
-    final XFile? image = await _picker.pickImage(
+    final image = await _picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 1024,
       maxHeight: 1024,
       imageQuality: 85,
     );
-
     if (image != null) {
-      setState(() {
-        _petPhoto = File(image.path);
-      });
+      setState(() => _petPhoto = File(image.path));
     }
   }
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
-
     try {
-      // TODO: Save pet profile to Firestore
-      // 1. Upload photo to Firebase Storage
-      // 2. Update Firestore pet document
-      // 3. Update device name if changed
-
+      // TODO: Save pet profile to Firestore + upload photo to Storage.
       await Future.delayed(const Duration(seconds: 1));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Perfil de mascota actualizado'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Perfil de mascota actualizado')),
+      );
+      Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 }
