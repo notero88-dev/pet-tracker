@@ -1,8 +1,19 @@
+// QR Scanner — Petti restyle.
+//
+// Camera viewfinder with a square cutout where the user aligns the QR
+// code on the back of the GPS collar. Corner markers in Marigold so they
+// pop against any background. Instructions in a warm Midnight card with
+// Petti type. "Ingresar IMEI manualmente" affordance opens a Petti dialog.
+//
+// One-shot scan: detected → validate → navigate. Manual entry is the
+// fallback when the QR is dirty / damaged.
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+
+import '../../utils/petti_theme.dart';
 import 'pet_profile_screen.dart';
 
-/// QR Scanner to capture device IMEI
 class QRScannerScreen extends StatefulWidget {
   const QRScannerScreen({super.key});
 
@@ -11,81 +22,85 @@ class QRScannerScreen extends StatefulWidget {
 }
 
 class _QRScannerScreenState extends State<QRScannerScreen> {
-  MobileScannerController cameraController = MobileScannerController();
+  final MobileScannerController cameraController = MobileScannerController();
   bool _isProcessing = false;
+
+  @override
+  void dispose() {
+    cameraController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.black,
+      // Translucent app bar so the camera preview shows through to the top.
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Escanear Dispositivo'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.white,
+        title: const Text('Escanear collar'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.flashlight_on),
+            icon: const Icon(Icons.flashlight_on_outlined),
             onPressed: () => cameraController.toggleTorch(),
-            tooltip: 'Activar/desactivar linterna',
+            tooltip: 'Linterna',
           ),
         ],
       ),
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          // Camera preview
           MobileScanner(
             controller: cameraController,
             onDetect: _handleBarcode,
           ),
-          
-          // Overlay with cutout
-          CustomPaint(
-            painter: ScannerOverlayPainter(),
-            child: Container(),
-          ),
-          
-          // Instructions
+          CustomPaint(painter: _ScannerOverlayPainter()),
           Positioned(
-            bottom: 100,
-            left: 20,
-            right: 20,
+            bottom: PettiSpacing.s7,
+            left: PettiSpacing.s5,
+            right: PettiSpacing.s5,
             child: Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(PettiSpacing.s5),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(12),
+                color: PettiColors.midnight.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(PettiRadii.md),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
-                    Icons.qr_code_scanner,
+                    Icons.qr_code_scanner_rounded,
                     color: Colors.white,
-                    size: 48,
+                    size: 44,
                   ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Escanea el código QR',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(height: PettiSpacing.s3),
+                  Text(
+                    'Apunta al código QR',
+                    style: PettiText.h3().copyWith(color: Colors.white),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: PettiSpacing.s2),
+                  Text(
+                    'El código está en la parte trasera del collar GPS.',
+                    style: PettiText.body().copyWith(
+                      color: Colors.white.withValues(alpha: 0.85),
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'El código QR está en la parte trasera del dispositivo GPS',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 14,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: PettiSpacing.s4),
                   TextButton.icon(
-                    onPressed: () => _showManualEntryDialog(),
-                    icon: const Icon(Icons.keyboard, color: Colors.white),
-                    label: const Text(
-                      'Ingresar manualmente',
-                      style: TextStyle(color: Colors.white),
+                    onPressed: _showManualEntryDialog,
+                    icon: const Icon(Icons.keyboard_outlined,
+                        color: Colors.white),
+                    label: Text(
+                      'Ingresar IMEI manualmente',
+                      style: PettiText.bodyStrong().copyWith(
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                 ],
@@ -97,20 +112,21 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     );
   }
 
+  // ----------------------------------------------------------- callbacks
+
   void _handleBarcode(BarcodeCapture capture) {
     if (_isProcessing) return;
-    
-    final List<Barcode> barcodes = capture.barcodes;
+
+    final barcodes = capture.barcodes;
     if (barcodes.isEmpty) return;
 
-    final String? code = barcodes.first.rawValue;
+    final code = barcodes.first.rawValue;
     if (code == null || code.isEmpty) return;
 
     setState(() => _isProcessing = true);
 
-    // Validate IMEI format (15 digits)
     if (_isValidIMEI(code)) {
-      _navigateToPetProfile(code);
+      _navigateToPetProfile(_normalizeImei(code));
     } else {
       _showInvalidCodeDialog(code);
       setState(() => _isProcessing = false);
@@ -118,31 +134,35 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   }
 
   bool _isValidIMEI(String code) {
-    // IMEI should be 15 digits
     final cleaned = code.replaceAll(RegExp(r'\D'), '');
     return cleaned.length == 15;
   }
 
+  String _normalizeImei(String code) =>
+      code.replaceAll(RegExp(r'\D'), '');
+
   void _navigateToPetProfile(String imei) {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (context) => PetProfileScreen(imei: imei),
-      ),
+      MaterialPageRoute(builder: (_) => PetProfileScreen(imei: imei)),
     );
   }
+
+  // ----------------------------------------------------------- dialogs
 
   void _showInvalidCodeDialog(String code) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Código Inválido'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Código no válido'),
         content: Text(
-          'El código escaneado no es un IMEI válido.\n\nCódigo: $code\n\nEl IMEI debe tener 15 dígitos.',
+          'El código escaneado no parece un IMEI válido.\n\n'
+          'Código: $code\n\n'
+          'El IMEI debe tener 15 dígitos.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('OK'),
           ),
         ],
@@ -152,32 +172,32 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
 
   void _showManualEntryDialog() {
     final controller = TextEditingController();
-    
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Ingresar IMEI'),
         content: TextField(
           controller: controller,
           keyboardType: TextInputType.number,
           maxLength: 15,
+          autofocus: true,
           decoration: const InputDecoration(
             labelText: 'IMEI (15 dígitos)',
-            hintText: '867284062538543',
-            border: OutlineInputBorder(),
+            hintText: '862407061373209',
           ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
             onPressed: () {
               final imei = controller.text.trim();
               if (_isValidIMEI(imei)) {
-                Navigator.pop(context);
-                _navigateToPetProfile(imei);
+                Navigator.pop(dialogContext);
+                _navigateToPetProfile(_normalizeImei(imei));
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
@@ -192,96 +212,59 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       ),
     );
   }
-
-  @override
-  void dispose() {
-    cameraController.dispose();
-    super.dispose();
-  }
 }
 
-/// Custom painter for scanner overlay
-class ScannerOverlayPainter extends CustomPainter {
+// =============================================================================
+// _ScannerOverlayPainter — dim everything outside a centered rounded square
+// (the cutout window) and draw Marigold L-shaped corner markers.
+// =============================================================================
+
+class _ScannerOverlayPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.black.withOpacity(0.5)
+    // Dim full-screen tint with the cutout punched out via even-odd fill rule.
+    final dimPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.6)
       ..style = PaintingStyle.fill;
 
     final cutoutSize = size.width * 0.7;
     final cutoutLeft = (size.width - cutoutSize) / 2;
     final cutoutTop = (size.height - cutoutSize) / 2;
 
-    // Draw overlay with cutout
     final path = Path()
       ..addRect(Rect.fromLTWH(0, 0, size.width, size.height))
       ..addRRect(
         RRect.fromRectAndRadius(
           Rect.fromLTWH(cutoutLeft, cutoutTop, cutoutSize, cutoutSize),
-          const Radius.circular(12),
+          const Radius.circular(PettiRadii.md),
         ),
       )
       ..fillType = PathFillType.evenOdd;
 
-    canvas.drawPath(path, paint);
+    canvas.drawPath(path, dimPaint);
 
-    // Draw corner markers
+    // Marigold L-shaped corner markers — bright enough to read against any
+    // camera content the user points at.
+    const markerLength = 32.0;
+    const markerWidth = 4.0;
     final markerPaint = Paint()
-      ..color = Colors.green
+      ..color = PettiColors.marigold
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
+      ..strokeWidth = markerWidth
+      ..strokeCap = StrokeCap.round;
 
-    final markerLength = 30.0;
+    void corner(double x, double y, double dx, double dy) {
+      canvas.drawLine(Offset(x, y), Offset(x + dx, y), markerPaint);
+      canvas.drawLine(Offset(x, y), Offset(x, y + dy), markerPaint);
+    }
 
-    // Top-left corner
-    canvas.drawLine(
-      Offset(cutoutLeft, cutoutTop),
-      Offset(cutoutLeft + markerLength, cutoutTop),
-      markerPaint,
-    );
-    canvas.drawLine(
-      Offset(cutoutLeft, cutoutTop),
-      Offset(cutoutLeft, cutoutTop + markerLength),
-      markerPaint,
-    );
-
-    // Top-right corner
-    canvas.drawLine(
-      Offset(cutoutLeft + cutoutSize, cutoutTop),
-      Offset(cutoutLeft + cutoutSize - markerLength, cutoutTop),
-      markerPaint,
-    );
-    canvas.drawLine(
-      Offset(cutoutLeft + cutoutSize, cutoutTop),
-      Offset(cutoutLeft + cutoutSize, cutoutTop + markerLength),
-      markerPaint,
-    );
-
-    // Bottom-left corner
-    canvas.drawLine(
-      Offset(cutoutLeft, cutoutTop + cutoutSize),
-      Offset(cutoutLeft + markerLength, cutoutTop + cutoutSize),
-      markerPaint,
-    );
-    canvas.drawLine(
-      Offset(cutoutLeft, cutoutTop + cutoutSize),
-      Offset(cutoutLeft, cutoutTop + cutoutSize - markerLength),
-      markerPaint,
-    );
-
-    // Bottom-right corner
-    canvas.drawLine(
-      Offset(cutoutLeft + cutoutSize, cutoutTop + cutoutSize),
-      Offset(cutoutLeft + cutoutSize - markerLength, cutoutTop + cutoutSize),
-      markerPaint,
-    );
-    canvas.drawLine(
-      Offset(cutoutLeft + cutoutSize, cutoutTop + cutoutSize),
-      Offset(cutoutLeft + cutoutSize, cutoutTop + cutoutSize - markerLength),
-      markerPaint,
-    );
+    corner(cutoutLeft, cutoutTop, markerLength, markerLength);
+    corner(cutoutLeft + cutoutSize, cutoutTop, -markerLength, markerLength);
+    corner(cutoutLeft, cutoutTop + cutoutSize, markerLength, -markerLength);
+    corner(cutoutLeft + cutoutSize, cutoutTop + cutoutSize, -markerLength,
+        -markerLength);
   }
 
   @override
-  bool shouldRepaint(CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

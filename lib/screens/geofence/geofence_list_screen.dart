@@ -1,18 +1,27 @@
+// Geofence list — Petti restyle.
+//
+// Shows the geofences linked to a device, plus an "Agregar zona" CTA when
+// under the 3-zone limit. Tap a row → bottom sheet with View / Edit /
+// Delete options.
+//
+// Uses Petti tokens throughout. The Zona Segura wizard creates one of
+// these as part of onboarding (commit 4c07131); this screen is for
+// managing additional zones afterward (e.g., "Trabajo", "Veterinario").
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../models/device.dart';
 import '../../models/geofence.dart';
 import '../../providers/traccar_provider.dart';
+import '../../utils/petti_theme.dart';
+import '../../widgets/petti/petti_primitives.dart';
 import 'geofence_create_screen.dart';
 
-/// Geofence list screen for a device
 class GeofenceListScreen extends StatefulWidget {
   final Device device;
 
-  const GeofenceListScreen({
-    super.key,
-    required this.device,
-  });
+  const GeofenceListScreen({super.key, required this.device});
 
   @override
   State<GeofenceListScreen> createState() => _GeofenceListScreenState();
@@ -30,10 +39,8 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
 
   Future<void> _loadGeofences() async {
     setState(() => _isLoading = true);
-    
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     await traccar.loadGeofences();
-    
     if (mounted) {
       setState(() {
         _geofences = traccar.getGeofencesForDevice(widget.device.traccarId!);
@@ -45,12 +52,14 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: PettiColors.cloud,
       appBar: AppBar(
-        title: const Text('Zonas Seguras'),
+        title: const Text('Zonas seguras'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded),
             onPressed: _loadGeofences,
+            tooltip: 'Actualizar',
           ),
         ],
       ),
@@ -58,21 +67,29 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _geofences.isEmpty
               ? _buildEmptyState()
-              : _buildGeofenceList(),
-      floatingActionButton: _geofences.length < 3
+              : _buildList(),
+      floatingActionButton: _geofences.length < 3 && !_isLoading
           ? FloatingActionButton.extended(
               onPressed: _createGeofence,
-              icon: const Icon(Icons.add_location),
-              label: const Text('Crear Zona'),
+              backgroundColor: PettiColors.marigold,
+              foregroundColor: PettiColors.midnight,
+              icon: const Icon(Icons.add_location_alt_outlined),
+              label: Text(
+                'Agregar zona',
+                style:
+                    PettiText.bodyStrong().copyWith(fontSize: 14),
+              ),
             )
           : null,
     );
   }
 
+  // ---------------------------------------------------------- empty state
+
   Widget _buildEmptyState() {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(PettiSpacing.s6),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -80,42 +97,31 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
               width: 120,
               height: 120,
               decoration: BoxDecoration(
-                color: const Color(0xFF2D6A4F).withOpacity(0.1),
-                shape: BoxShape.circle,
+                color: PettiColors.sabanaSoft,
+                borderRadius: BorderRadius.circular(PettiRadii.lg),
               ),
               child: const Icon(
                 Icons.shield_outlined,
-                size: 64,
-                color: Color(0xFF2D6A4F),
+                size: 56,
+                color: PettiColors.sabana,
               ),
             ),
-            const SizedBox(height: 24),
-            const Text(
-              'Sin Zonas Seguras',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: PettiSpacing.s5),
+            Text('Sin zonas seguras',
+                style: PettiText.h2(), textAlign: TextAlign.center),
+            const SizedBox(height: PettiSpacing.s2),
             Text(
               'Crea zonas seguras para recibir alertas cuando ${widget.device.name} entre o salga.',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: PettiText.body().copyWith(color: PettiColors.fgDim),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: _createGeofence,
-              icon: const Icon(Icons.add_location),
-              label: const Text('Crear Primera Zona'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 16,
-                ),
+            const SizedBox(height: PettiSpacing.s6),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _createGeofence,
+                icon: const Icon(Icons.add_location_alt_outlined),
+                label: const Text('Crear primera zona'),
               ),
             ),
           ],
@@ -124,36 +130,48 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
     );
   }
 
-  Widget _buildGeofenceList() {
+  // ---------------------------------------------------------- list
+
+  Widget _buildList() {
     return Column(
       children: [
-        // Header info
+        // Quota banner — Sand surface, calm, informative.
         Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.grey[100],
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: PettiSpacing.s4,
+            vertical: PettiSpacing.s3,
+          ),
+          color: PettiColors.sand,
           child: Row(
             children: [
-              const Icon(Icons.info_outline, size: 20),
-              const SizedBox(width: 12),
+              const Icon(Icons.info_outline,
+                  size: 18, color: PettiColors.fgDim),
+              const SizedBox(width: PettiSpacing.s2),
               Expanded(
                 child: Text(
                   'Tienes ${_geofences.length} de 3 zonas creadas',
-                  style: const TextStyle(fontSize: 14),
+                  style: PettiText.bodySm().copyWith(color: PettiColors.fgDim),
                 ),
               ),
             ],
           ),
         ),
-
-        // Geofence list
         Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.all(16),
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(
+              PettiSpacing.s4,
+              PettiSpacing.s4,
+              PettiSpacing.s4,
+              PettiSpacing.s8,
+            ),
             itemCount: _geofences.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
-              final geofence = _geofences[index];
-              return _buildGeofenceCard(geofence);
+              final g = _geofences[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: PettiSpacing.s2),
+                child: _buildGeofenceCard(g),
+              );
             },
           ),
         ),
@@ -161,93 +179,61 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
     );
   }
 
-  Widget _buildGeofenceCard(Geofence geofence) {
-    return Card(
-      elevation: 2,
+  Widget _buildGeofenceCard(Geofence g) {
+    return Material(
+      color: Colors.transparent,
       child: InkWell(
-        onTap: () => _showGeofenceOptions(geofence),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+        borderRadius: BorderRadius.circular(PettiRadii.md),
+        onTap: () => _showGeofenceOptions(g),
+        child: PettiCard(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.all(PettiSpacing.s4),
           child: Row(
             children: [
-              // Icon
               Container(
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: Color(geofence.colorValue).withOpacity(0.1),
-                  shape: BoxShape.circle,
+                  color: PettiColors.marigoldSoft,
+                  borderRadius: BorderRadius.circular(PettiRadii.sm),
                 ),
                 child: Center(
-                  child: Text(
-                    geofence.typeIcon,
-                    style: const TextStyle(fontSize: 28),
-                  ),
+                  child: Text(g.typeIcon,
+                      style: const TextStyle(fontSize: 26)),
                 ),
               ),
-              const SizedBox(width: 16),
-
-              // Info
+              const SizedBox(width: PettiSpacing.s4),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      geofence.name,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
+                    Text(g.name, style: PettiText.h4()),
+                    const SizedBox(height: PettiSpacing.s1),
                     Row(
                       children: [
-                        Icon(
-                          Icons.radio_button_checked,
-                          size: 14,
-                          color: Colors.grey[600],
-                        ),
+                        const Icon(Icons.radio_button_checked,
+                            size: 14, color: PettiColors.fgDim),
                         const SizedBox(width: 4),
                         Text(
-                          'Radio: ${geofence.radiusText}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
+                          'Radio: ${g.radiusText}',
+                          style: PettiText.bodySm()
+                              .copyWith(color: PettiColors.fgDim),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: geofence.isActive ? Colors.green : Colors.grey,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          geofence.isActive ? 'Activa' : 'Inactiva',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: geofence.isActive ? Colors.green : Colors.grey,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                    const SizedBox(height: PettiSpacing.s2),
+                    PettiStatusPill(
+                      kind: g.isActive
+                          ? PettiStatus.online
+                          : PettiStatus.offline,
+                      label: g.isActive ? 'Activa' : 'Inactiva',
                     ),
                   ],
                 ),
               ),
-
-              // Arrow
-              Icon(
+              const Icon(
                 Icons.chevron_right,
-                color: Colors.grey[400],
+                color: PettiColors.fgFaint,
               ),
             ],
           ),
@@ -256,28 +242,58 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
     );
   }
 
+  // ---------------------------------------------------------- actions
+
   void _createGeofence() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => GeofenceCreateScreen(device: widget.device),
+        builder: (_) => GeofenceCreateScreen(device: widget.device),
       ),
     ).then((_) => _loadGeofences());
   }
 
-  void _showGeofenceOptions(Geofence geofence) {
+  void _editGeofence(Geofence g) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GeofenceCreateScreen(
+          device: widget.device,
+          editGeofence: g,
+        ),
+      ),
+    ).then((_) => _loadGeofences());
+  }
+
+  void _showGeofenceOptions(Geofence g) {
     showModalBottomSheet(
       context: context,
-      builder: (context) => SafeArea(
+      backgroundColor: PettiColors.cloud,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(PettiRadii.lg),
+        ),
+      ),
+      builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const SizedBox(height: PettiSpacing.s2),
+            // Pull handle
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: PettiColors.fog,
+                borderRadius: BorderRadius.circular(PettiRadii.pill),
+              ),
+            ),
+            const SizedBox(height: PettiSpacing.s3),
             ListTile(
-              leading: const Icon(Icons.visibility),
-              title: const Text('Ver en Mapa'),
+              leading: const Icon(Icons.visibility_outlined),
+              title: const Text('Ver en mapa'),
               onTap: () {
-                Navigator.pop(context);
-                // TODO: Navigate to map view with geofence highlighted
+                Navigator.pop(sheetContext);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Vista de mapa disponible próximamente'),
@@ -286,63 +302,54 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.edit),
+              leading: const Icon(Icons.edit_outlined),
               title: const Text('Editar'),
               onTap: () {
-                Navigator.pop(context);
-                _editGeofence(geofence);
+                Navigator.pop(sheetContext);
+                _editGeofence(g);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text(
+              leading: const Icon(Icons.delete_outline,
+                  color: PettiColors.alert),
+              title: Text(
                 'Eliminar',
-                style: TextStyle(color: Colors.red),
+                style: PettiText.bodyStrong()
+                    .copyWith(color: PettiColors.alert, fontSize: 16),
               ),
               onTap: () {
-                Navigator.pop(context);
-                _confirmDelete(geofence);
+                Navigator.pop(sheetContext);
+                _confirmDelete(g);
               },
             ),
+            const SizedBox(height: PettiSpacing.s2),
           ],
         ),
       ),
     );
   }
 
-  void _editGeofence(Geofence geofence) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => GeofenceCreateScreen(
-          device: widget.device,
-          editGeofence: geofence,
-        ),
-      ),
-    ).then((_) => _loadGeofences());
-  }
-
-  void _confirmDelete(Geofence geofence) {
+  void _confirmDelete(Geofence g) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Eliminar Zona'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar zona'),
         content: Text(
-          '¿Estás seguro de eliminar la zona "${geofence.name}"?\n\n'
-          'No recibirás más alertas de esta zona.',
+          '¿Eliminar la zona "${g.name}"?\n\nNo recibirás más alertas de esta zona.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context);
-              _deleteGeofence(geofence);
+              Navigator.pop(dialogContext);
+              _deleteGeofence(g);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+              backgroundColor: PettiColors.alert,
+              foregroundColor: Colors.white,
             ),
             child: const Text('Eliminar'),
           ),
@@ -351,26 +358,18 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
     );
   }
 
-  Future<void> _deleteGeofence(Geofence geofence) async {
+  Future<void> _deleteGeofence(Geofence g) async {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
-    
-    final success = await traccar.deleteGeofence(geofence.id);
-    
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Zona "${geofence.name}" eliminada'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      _loadGeofences();
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${traccar.errorMessage}'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+    final success = await traccar.deleteGeofence(g.id);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(success
+            ? 'Zona "${g.name}" eliminada'
+            : 'Error: ${traccar.errorMessage}'),
+      ),
+    );
+    if (success) _loadGeofences();
   }
 }
