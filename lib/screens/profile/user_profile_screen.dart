@@ -1,10 +1,24 @@
-import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:image_picker/image_picker.dart';
-import '../../providers/auth_provider.dart';
+// User profile edit — Petti restyle.
+//
+// Functionality unchanged: photo picker + name/phone fields + collapsible
+// password section + save. Visual changes:
+//   - Cloud background
+//   - Avatar circle uses marigold-soft fill + midnight icon when empty,
+//     marigold camera button overlay (matches the brand)
+//   - Save button uses theme defaults (Marigold/Midnight)
+//   - SnackBars no longer carry hard-coded green/red — the global Petti
+//     theme renders them in Midnight on Cloud, which is more legible
+//     anyway
 
-/// User profile edit screen
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
+
+import '../../providers/auth_provider.dart';
+import '../../utils/petti_theme.dart';
+
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
 
@@ -33,12 +47,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   }
 
   void _loadUserData() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final user = authProvider.currentUser;
-    
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final user = auth.currentUser;
     if (user != null) {
       _nameController.text = user.displayName ?? '';
-      // Phone would come from Firestore user profile (not implemented yet)
+      // Phone is in Firestore (not yet wired)
     }
   }
 
@@ -54,99 +67,49 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    final user = authProvider.currentUser;
+    final auth = Provider.of<AuthProvider>(context);
+    final user = auth.currentUser;
 
     return Scaffold(
+      backgroundColor: PettiColors.cloud,
       appBar: AppBar(
-        title: const Text('Mi Perfil'),
+        title: const Text('Mi perfil'),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _saveProfile,
-            child: const Text(
-              'Guardar',
-              style: TextStyle(color: Colors.white),
-            ),
+            child: const Text('Guardar'),
           ),
+          const SizedBox(width: PettiSpacing.s2),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(PettiSpacing.s5),
         child: Form(
           key: _formKey,
           child: Column(
             children: [
-              // Profile photo
-              Center(
-                child: Stack(
-                  children: [
-                    Container(
-                      width: 120,
-                      height: 120,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        shape: BoxShape.circle,
-                        image: _profilePhoto != null
-                            ? DecorationImage(
-                                image: FileImage(_profilePhoto!),
-                                fit: BoxFit.cover,
-                              )
-                            : null,
-                      ),
-                      child: _profilePhoto == null
-                          ? Icon(
-                              Icons.person,
-                              size: 60,
-                              color: Colors.grey[600],
-                            )
-                          : null,
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: GestureDetector(
-                        onTap: _pickPhoto,
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF2D6A4F),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32),
+              const SizedBox(height: PettiSpacing.s2),
+              _buildAvatar(),
+              const SizedBox(height: PettiSpacing.s6),
 
-              // Email (read-only)
               TextFormField(
                 initialValue: user?.email ?? '',
+                enabled: false,
                 decoration: const InputDecoration(
                   labelText: 'Email',
-                  prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(),
-                  suffixIcon: Icon(Icons.lock, size: 16),
+                  prefixIcon: Icon(Icons.alternate_email),
+                  suffixIcon: Icon(Icons.lock_outline, size: 16),
                 ),
-                enabled: false,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: PettiSpacing.s4),
 
-              // Name
               TextFormField(
                 controller: _nameController,
+                textCapitalization: TextCapitalization.words,
                 decoration: const InputDecoration(
-                  labelText: 'Nombre Completo',
+                  labelText: 'Nombre completo',
                   hintText: 'Ej: Juan Pérez',
                   prefixIcon: Icon(Icons.person_outline),
-                  border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -158,55 +121,48 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   return null;
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: PettiSpacing.s4),
 
-              // Phone
               TextFormField(
                 controller: _phoneController,
+                keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(
                   labelText: 'Teléfono',
                   hintText: 'Ej: 3001234567',
-                  prefixIcon: Icon(Icons.phone),
-                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.phone_outlined),
                 ),
-                keyboardType: TextInputType.phone,
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: PettiSpacing.s6),
 
-              // Change password section
               OutlinedButton.icon(
-                onPressed: () {
-                  setState(() => _isChangingPassword = !_isChangingPassword);
-                },
-                icon: Icon(_isChangingPassword
-                    ? Icons.keyboard_arrow_up
-                    : Icons.keyboard_arrow_down),
-                label: const Text('Cambiar Contraseña'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 48),
+                onPressed: () => setState(
+                    () => _isChangingPassword = !_isChangingPassword),
+                icon: Icon(
+                  _isChangingPassword
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
                 ),
+                label: const Text('Cambiar contraseña'),
               ),
 
               if (_isChangingPassword) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: PettiSpacing.s4),
                 TextFormField(
                   controller: _currentPasswordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Contraseña Actual',
-                    prefixIcon: Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(),
-                  ),
                   obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Contraseña actual',
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: PettiSpacing.s4),
                 TextFormField(
                   controller: _newPasswordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nueva Contraseña',
-                    prefixIcon: Icon(Icons.lock),
-                    border: OutlineInputBorder(),
-                  ),
                   obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nueva contraseña',
+                    prefixIcon: Icon(Icons.lock),
+                  ),
                   validator: (value) {
                     if (_isChangingPassword &&
                         (value == null || value.length < 6)) {
@@ -215,15 +171,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: PettiSpacing.s4),
                 TextFormField(
                   controller: _confirmPasswordController,
-                  decoration: const InputDecoration(
-                    labelText: 'Confirmar Nueva Contraseña',
-                    prefixIcon: Icon(Icons.lock),
-                    border: OutlineInputBorder(),
-                  ),
                   obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirmar nueva contraseña',
+                    prefixIcon: Icon(Icons.lock),
+                  ),
                   validator: (value) {
                     if (_isChangingPassword &&
                         value != _newPasswordController.text) {
@@ -234,24 +189,21 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 ),
               ],
 
-              const SizedBox(height: 32),
+              const SizedBox(height: PettiSpacing.s6),
 
-              // Save button (large)
               ElevatedButton(
                 onPressed: _isLoading ? null : _saveProfile,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 56),
-                ),
                 child: _isLoading
                     ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation(
+                              PettiColors.midnight),
+                        ),
                       )
-                    : const Text(
-                        'Guardar Cambios',
-                        style: TextStyle(fontSize: 16),
-                      ),
+                    : const Text('Guardar cambios'),
               ),
             ],
           ),
@@ -260,18 +212,70 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     );
   }
 
+  Widget _buildAvatar() {
+    return Center(
+      child: Stack(
+        children: [
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              color: _profilePhoto == null ? PettiColors.marigoldSoft : null,
+              shape: BoxShape.circle,
+              border: Border.all(color: PettiColors.borderLight, width: 1),
+              image: _profilePhoto != null
+                  ? DecorationImage(
+                      image: FileImage(_profilePhoto!),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
+            child: _profilePhoto == null
+                ? const Icon(
+                    Icons.person_outline,
+                    size: 60,
+                    color: PettiColors.midnight,
+                  )
+                : null,
+          ),
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Material(
+              color: PettiColors.marigold,
+              shape: const CircleBorder(side: BorderSide(
+                color: PettiColors.cloud,
+                width: 2,
+              )),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _pickPhoto,
+                child: const SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: Icon(
+                    Icons.camera_alt_outlined,
+                    color: PettiColors.midnight,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _pickPhoto() async {
-    final XFile? image = await _picker.pickImage(
+    final image = await _picker.pickImage(
       source: ImageSource.gallery,
       maxWidth: 1024,
       maxHeight: 1024,
       imageQuality: 85,
     );
-
     if (image != null) {
-      setState(() {
-        _profilePhoto = File(image.path);
-      });
+      setState(() => _profilePhoto = File(image.path));
     }
   }
 
@@ -279,45 +283,27 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-
     try {
-      // TODO: Update user profile in Firebase
-      // 1. Update display name
-      // 2. Upload photo to Firebase Storage
-      // 3. Update Firestore user document with phone
-
-      // For now, just show success
+      // TODO: Update user profile in Firebase Auth + Firestore + Storage.
       await Future.delayed(const Duration(seconds: 1));
 
       if (_isChangingPassword &&
           _currentPasswordController.text.isNotEmpty) {
-        // TODO: Change password
-        // Re-authenticate with current password
-        // Update to new password
+        // TODO: re-authenticate + change password
       }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Perfil actualizado correctamente'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Perfil actualizado correctamente')),
+      );
+      Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 }
