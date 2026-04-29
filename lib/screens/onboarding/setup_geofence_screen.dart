@@ -15,9 +15,13 @@ import 'package:provider/provider.dart';
 import '../../models/device.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
+import '../../services/pending_command_tracker.dart';
 import '../../services/provisioning_api.dart';
 import '../../services/wizard_step_result.dart';
 import '../../utils/petti_theme.dart';
+import '../../widgets/petti/petti_pending_commands_banner.dart';
+import '../../widgets/petti/petti_screen_heading.dart';
+import '../../widgets/petti/petti_wizard_timeline.dart';
 import '../home/home_screen.dart';
 import 'mode8_wizard_state.dart';
 
@@ -30,12 +34,18 @@ class SetupGeofenceScreen extends StatefulWidget {
   /// should leave this null and let the screen build its own client.
   final ProvisioningApi? api;
 
+  /// Optional shared PendingCommandTracker so a single banner can
+  /// surface across screens. If null, the screen creates a private
+  /// tracker scoped to its lifetime.
+  final PendingCommandTracker? commandTracker;
+
   const SetupGeofenceScreen({
     super.key,
     required this.device,
     required this.petName,
     required this.currentPosition,
     this.api,
+    this.commandTracker,
   });
 
   @override
@@ -54,11 +64,20 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
   // halt-on-failure flow. See mode8_wizard_state.dart.
   Mode8WizardState _wizardState = Mode8WizardState.idle;
   late final ProvisioningApi _api;
+  late final PendingCommandTracker _tracker;
+  bool _ownsTracker = false;
 
   @override
   void initState() {
     super.initState();
     _api = widget.api ?? ProvisioningApi();
+    if (widget.commandTracker != null) {
+      _tracker = widget.commandTracker!;
+      _ownsTracker = false;
+    } else {
+      _tracker = PendingCommandTracker();
+      _ownsTracker = true;
+    }
     _center = LatLng(
       widget.currentPosition.latitude,
       widget.currentPosition.longitude,
@@ -70,6 +89,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    if (_ownsTracker) _tracker.dispose();
     super.dispose();
   }
 
@@ -102,6 +122,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       ),
       body: Stack(
         children: [
+          // === Map + bottom sheet (the editing surface) =================
           GoogleMap(
             initialCameraPosition: CameraPosition(target: _center, zoom: 16),
             circles: _circles,
@@ -169,6 +190,11 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
                         ),
                       ),
                     ),
+                    // Pending-command banner — only renders when there's
+                    // an in-flight or recently-resolved command. Sits
+                    // above the form so it's the first thing the user
+                    // sees if they navigate back mid-wizard.
+                    PettiPendingCommandsBanner(tracker: _tracker),
                     const SizedBox(height: PettiSpacing.s4),
 
                     Row(
@@ -307,6 +333,14 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
               ),
             ),
           ),
+
+          // === Configuring overlay (A6.3) ================================
+          // Once the user taps "Crear zona segura" the wizard transitions
+          // through 5 backend steps. The map+form below stays mounted
+          // (instant back-navigation if needed); the overlay sits above
+          // it as a dark Midnight hero with the design's vertical timeline.
+          if (_isCreating || _wizardState.isInFlight)
+            _Mode8ConfiguringOverlay(state: _wizardState),
         ],
       ),
     );
@@ -339,11 +373,22 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
 
     final imei = widget.device.uniqueId; // Device.uniqueId is the IMEI
 
+    // Single tracker entry covers the whole wizard — we don't surface
+    // each sub-step in the banner because the in-line button label
+    // already shows step-by-step progress. The banner exists for the
+    // case where the user navigates AWAY mid-wizard and needs context
+    // when they return.
+    final trackerId = _tracker.start(
+      label: 'Configurando tu zona segura',
+      imei: imei,
+    );
+
     // ---- Step 1: SCAN — collect nearby WiFi APs from the device.
     setState(() => _wizardState = Mode8WizardState.scanning);
     final scanResult = await _api.scan(imei: imei);
     final macs = _parseScanResult(scanResult);
     if (macs == null) {
+      _resolveTracker(trackerId, scanResult);
       _failWizard(scanResult, 'No pudimos leer las redes WiFi de tu casa');
       return;
     }
@@ -357,6 +402,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       mac3: macs[2],
     );
     if (apResult is! WizardStepOk) {
+      _resolveTracker(trackerId, apResult);
       _failWizard(apResult, 'No pudimos memorizar tu casa');
       return;
     }
@@ -373,6 +419,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       radiusMeters: _radiusMeters.round(),
     );
     if (geoResult is! WizardStepOk) {
+      _resolveTracker(trackerId, geoResult);
       _failWizard(geoResult, 'No pudimos dibujar tu zona segura');
       return;
     }
@@ -381,6 +428,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     setState(() => _wizardState = Mode8WizardState.enteringMode8);
     final modeResult = await _api.setModeHome(imei: imei, intervalSeconds: 30);
     if (modeResult is! WizardStepOk) {
+      _resolveTracker(trackerId, modeResult);
       _failWizard(modeResult, 'No pudimos activar el ahorro de batería');
       return;
     }
@@ -397,8 +445,11 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       deviceId: widget.device.traccarId!,
     );
     if (geofenceId == null) {
+      final failure = WizardStepFailed(
+          traccar.errorMessage ?? 'Traccar geofence creation failed');
+      _resolveTracker(trackerId, failure);
       _failWizard(
-        WizardStepFailed(traccar.errorMessage ?? 'Traccar geofence creation failed'),
+        failure,
         traccar.errorMessage ?? 'No pudimos guardar la zona en el servidor',
       );
       return;
@@ -409,7 +460,33 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       _wizardState = Mode8WizardState.success;
       _isCreating = false;
     });
+    _tracker.resolve(trackerId, PendingCommandStatus.delivered);
     _showSuccess();
+  }
+
+  /// Map a WizardStepResult onto the matching PendingCommandStatus +
+  /// optional error detail, and notify the tracker. Used at every
+  /// failure exit so the banner always reflects reality.
+  void _resolveTracker(String id, WizardStepResult result) {
+    PendingCommandStatus status;
+    String? detail;
+    if (result is WizardStepQueueExpired) {
+      status = PendingCommandStatus.expired;
+    } else if (result is WizardStepDeviceOffline) {
+      status = PendingCommandStatus.failed;
+      detail = 'Dispositivo desconectado.';
+    } else if (result is WizardStepTimedOut) {
+      status = PendingCommandStatus.timedOut;
+    } else if (result is WizardStepDeviceRejected) {
+      status = PendingCommandStatus.rejected;
+      detail = result.payload;
+    } else if (result is WizardStepFailed) {
+      status = PendingCommandStatus.failed;
+      detail = result.error;
+    } else {
+      status = PendingCommandStatus.failed;
+    }
+    _tracker.resolve(id, status, errorDetail: detail);
   }
 
   /// Pick the top 3 MACs from a SCAN reply payload, or fall back to
@@ -544,6 +621,104 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const HomeScreen()),
       (route) => false,
+    );
+  }
+}
+
+// ─── Configuring overlay (A6.3) ───────────────────────────────────────
+//
+// Full-screen dark hero with three regions:
+//  • Top — sabana-tinted home glyph in concentric pulse rings
+//  • Middle — hero heading "Enseñándole a tu Petti dónde es casa."
+//  • Bottom — vertical 5-step PettiWizardTimeline
+//
+// Sits above the map/form Stack as an opaque cover. Map editing chrome
+// stays mounted underneath so back-navigation is instant if a future
+// design adds a "cancel" affordance during the wizard.
+class _Mode8ConfiguringOverlay extends StatelessWidget {
+  final Mode8WizardState state;
+  const _Mode8ConfiguringOverlay({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Container(
+        color: PettiColors.midnight,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              PettiSpacing.s5,
+              PettiSpacing.s4,
+              PettiSpacing.s5,
+              PettiSpacing.s5,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _SabanaHomeHero(),
+                const SizedBox(height: PettiSpacing.s5),
+                const PettiScreenHeading(
+                  title: 'Enseñándole a tu Petti dónde es casa.',
+                  ledeText: 'Tarda menos de un minuto. Mantén el dispositivo cerca.',
+                ),
+                const SizedBox(height: PettiSpacing.s6),
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    child: PettiWizardTimeline.forWizardState(state),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Sabana-tinted home glyph at top of the configuring overlay —
+/// concentric rings in Sabana, with a square-rounded house icon centered.
+class _SabanaHomeHero extends StatelessWidget {
+  const _SabanaHomeHero();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 200,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          for (var i = 1; i <= 3; i++)
+            Container(
+              width: (70 + i * 50).toDouble(),
+              height: (70 + i * 50).toDouble(),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: PettiColors.sabana.withValues(alpha: 0.4 - i * 0.1),
+                  width: 1.5,
+                ),
+              ),
+            ),
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: PettiColors.sabana,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: PettiColors.sabana.withValues(alpha: 0.5),
+                  blurRadius: 40,
+                ),
+              ],
+            ),
+            child: const Icon(Icons.home_rounded,
+                color: PettiColors.fgOnDark, size: 28),
+          ),
+        ],
+      ),
     );
   }
 }

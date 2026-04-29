@@ -31,6 +31,7 @@ class PettiColors {
 
   static Color sabanaSoft = const Color(0xFF2F6B5C).withValues(alpha: 0.15);
   static Color duskSoft = const Color(0xFFC97A6E).withValues(alpha: 0.14);
+  static Color cafeSoft = const Color(0xFF6B4A34).withValues(alpha: 0.10);
 
   // Functional
   static const Color alert = Color(0xFFD7362C); // real emergencies only
@@ -40,21 +41,55 @@ class PettiColors {
 
   static Color alertSoft = const Color(0xFFD7362C).withValues(alpha: 0.10);
 
-  // Foreground
+  // Midnight surface variants — the dark-onboarding palette uses these
+  // for layered cards and hover states on top of the Midnight canvas.
+  static const Color midnightRaised = Color(0xFF182A42);
+  static const Color midnightHover = Color(0xFF223755);
+
+  // Foreground (on light / cloud surfaces)
   static const Color fgStrong = midnight; // headings on cloud
   static const Color fg = Color(0xFF2A3645); // body on cloud
   static const Color fgDim = trail; // meta, labels
   static const Color fgFaint = Color(0xFFB4B8C2); // placeholders, disabled
+
+  // Foreground (on midnight / dark surfaces) — required by the dark
+  // onboarding screens. Mirrors the design system's --fg-on-dark family.
+  static const Color fgOnDark = cloud;
+  static Color fgOnDarkDim = const Color(0xFFFAF7F2).withValues(alpha: 0.72);
+  static Color fgOnDarkFaint = const Color(0xFFFAF7F2).withValues(alpha: 0.46);
+  static Color fgOnDarkHairline = const Color(0xFFFAF7F2).withValues(alpha: 0.08);
 
   // Neutral scale
   static const Color n100 = Color(0xFFF2EEE7);
   static const Color n200 = Color(0xFFE8E4DE);
   static const Color n300 = Color(0xFFD3CFC8);
   static const Color n400 = Color(0xFFB4B0A8);
+  static const Color n500 = trail;
+  static const Color n600 = Color(0xFF5F6876);
+  static const Color n700 = Color(0xFF3B4554);
+  static const Color n800 = Color(0xFF1F2A3B);
+  static const Color n900 = midnight;
 
   // Borders
   static Color borderLight = const Color(0xFF0E1B2C).withValues(alpha: 0.08);
   static Color borderLightStrong = const Color(0xFF0E1B2C).withValues(alpha: 0.14);
+  static Color borderDark = const Color(0xFFFAF7F2).withValues(alpha: 0.08);
+  static Color borderDarkStrong = const Color(0xFFFAF7F2).withValues(alpha: 0.16);
+}
+
+/// Motion tokens. Match the design system's easing curves and durations
+/// so transitions across the app feel like one product, not many.
+class PettiMotion {
+  /// Standard ease-out-expo — used for most structural transitions.
+  static const Cubic ease = Cubic(0.22, 1, 0.36, 1);
+
+  /// Soft overshoot — used SPARINGLY for emotional micro-interactions
+  /// (heart fill, celebration toast). Never for structural UI.
+  static const Cubic easeSoft = Cubic(0.34, 1.56, 0.64, 1);
+
+  static const Duration micro = Duration(milliseconds: 180);
+  static const Duration std = Duration(milliseconds: 320);
+  static const Duration large = Duration(milliseconds: 600);
 }
 
 /// Spacing — 8pt grid.
@@ -120,6 +155,16 @@ class PettiText {
         fontSize: 72,
         fontWeight: FontWeight.w700,
         letterSpacing: -0.015 * 72,
+        height: 1.05,
+        color: PettiColors.fgStrong,
+      );
+
+  /// Hero — the largest typographic gesture inside an onboarding screen
+  /// (32px). Used by ScreenHeading.title in the wizard / setup flow.
+  static TextStyle hero() => GoogleFonts.spaceGrotesk(
+        fontSize: 32,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.025 * 32,
         height: 1.05,
         color: PettiColors.fgStrong,
       );
