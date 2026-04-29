@@ -15,19 +15,27 @@ import 'package:provider/provider.dart';
 import '../../models/device.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
+import '../../services/provisioning_api.dart';
+import '../../services/wizard_step_result.dart';
 import '../../utils/petti_theme.dart';
 import '../home/home_screen.dart';
+import 'mode8_wizard_state.dart';
 
 class SetupGeofenceScreen extends StatefulWidget {
   final Device device;
   final String petName;
   final Position currentPosition;
 
+  /// Optional ProvisioningApi injection for tests. Production callers
+  /// should leave this null and let the screen build its own client.
+  final ProvisioningApi? api;
+
   const SetupGeofenceScreen({
     super.key,
     required this.device,
     required this.petName,
     required this.currentPosition,
+    this.api,
   });
 
   @override
@@ -42,9 +50,15 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
   late LatLng _center;
   final Set<Circle> _circles = {};
 
+  // Mode 8 wizard state — used to drive the in-flight UI label and
+  // halt-on-failure flow. See mode8_wizard_state.dart.
+  Mode8WizardState _wizardState = Mode8WizardState.idle;
+  late final ProvisioningApi _api;
+
   @override
   void initState() {
     super.initState();
+    _api = widget.api ?? ProvisioningApi();
     _center = LatLng(
       widget.currentPosition.latitude,
       widget.currentPosition.longitude,
@@ -256,14 +270,30 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
                     ElevatedButton(
                       onPressed: _isCreating ? null : _createGeofence,
                       child: _isCreating
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                valueColor: AlwaysStoppedAnimation(
-                                    PettiColors.midnight),
-                              ),
+                          ? Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    valueColor: AlwaysStoppedAnimation(
+                                        PettiColors.midnight),
+                                  ),
+                                ),
+                                const SizedBox(width: PettiSpacing.s3),
+                                Flexible(
+                                  child: Text(
+                                    _wizardState.isInFlight
+                                        ? _wizardState.label
+                                        : 'Creando…',
+                                    style: PettiText.bodySm()
+                                        .copyWith(color: PettiColors.midnight),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             )
                           : const Text('Crear zona segura'),
                     ),
@@ -284,6 +314,17 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
 
   // ----------------------------------------------------------- actions
 
+  /// Drive the device through the Mode 8 setup sequence:
+  ///   SCAN → AP,,,m1,m2,m3 → GEO,LAT,LON,RADIUS → MODE,8,30
+  /// then create the matching server-side Traccar geofence so alert
+  /// evaluation runs even when the device is sleeping.
+  ///
+  /// Each step uses the new ProvisioningApi methods which pass
+  /// `?via=tcp&queue=true&queueMs=60000`, so a brief device-offline
+  /// window is absorbed silently. On any step failure we halt and
+  /// surface a Spanish-language user message; the server-side Traccar
+  /// geofence is NOT created if the device-side setup didn't fully
+  /// succeed.
   Future<void> _createGeofence() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
@@ -291,27 +332,141 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       return;
     }
 
-    setState(() => _isCreating = true);
-    final traccar = Provider.of<TraccarProvider>(context, listen: false);
+    setState(() {
+      _isCreating = true;
+      _wizardState = Mode8WizardState.idle;
+    });
 
-    try {
-      final geofenceId = await traccar.createCircularGeofence(
-        name: name,
-        latitude: _center.latitude,
-        longitude: _center.longitude,
-        radiusMeters: _radiusMeters,
-        deviceId: widget.device.traccarId!,
-      );
-      if (geofenceId != null) {
-        _showSuccess();
-      } else {
-        _showError(traccar.errorMessage ?? 'Error al crear zona');
-      }
-    } catch (e) {
-      _showError('Error inesperado: $e');
-    } finally {
-      if (mounted) setState(() => _isCreating = false);
+    final imei = widget.device.uniqueId; // Device.uniqueId is the IMEI
+
+    // ---- Step 1: SCAN — collect nearby WiFi APs from the device.
+    setState(() => _wizardState = Mode8WizardState.scanning);
+    final scanResult = await _api.scan(imei: imei);
+    final macs = _parseScanResult(scanResult);
+    if (macs == null) {
+      _failWizard(scanResult, 'No pudimos leer las redes WiFi de tu casa');
+      return;
     }
+
+    // ---- Step 2: AP,,,MAC1,MAC2,MAC3 — register home anchors.
+    setState(() => _wizardState = Mode8WizardState.settingMacs);
+    final apResult = await _api.setAccessPoints(
+      imei: imei,
+      mac1: macs[0],
+      mac2: macs[1],
+      mac3: macs[2],
+    );
+    if (apResult is! WizardStepOk) {
+      _failWizard(apResult, 'No pudimos memorizar tu casa');
+      return;
+    }
+
+    // ---- Step 3: GEO,LAT,LON,RADIUS — set the home geofence center.
+    // We use explicit coordinates (not SEARCH) because we already know
+    // the user's chosen location, and SEARCH is unreliable on V2.1.8
+    // firmware (PLAN.md Epic 3).
+    setState(() => _wizardState = Mode8WizardState.settingHomeZone);
+    final geoResult = await _api.setGeoFence(
+      imei: imei,
+      latitude: _center.latitude,
+      longitude: _center.longitude,
+      radiusMeters: _radiusMeters.round(),
+    );
+    if (geoResult is! WizardStepOk) {
+      _failWizard(geoResult, 'No pudimos dibujar tu zona segura');
+      return;
+    }
+
+    // ---- Step 4: MODE,8,30 — enable Home Mode with 30s wake window.
+    setState(() => _wizardState = Mode8WizardState.enteringMode8);
+    final modeResult = await _api.setModeHome(imei: imei, intervalSeconds: 30);
+    if (modeResult is! WizardStepOk) {
+      _failWizard(modeResult, 'No pudimos activar el ahorro de batería');
+      return;
+    }
+
+    // ---- Step 5: server-side Traccar geofence (alert evaluation).
+    if (!mounted) return;
+    setState(() => _wizardState = Mode8WizardState.creatingTraccarGeofence);
+    final traccar = Provider.of<TraccarProvider>(context, listen: false);
+    final geofenceId = await traccar.createCircularGeofence(
+      name: name,
+      latitude: _center.latitude,
+      longitude: _center.longitude,
+      radiusMeters: _radiusMeters,
+      deviceId: widget.device.traccarId!,
+    );
+    if (geofenceId == null) {
+      _failWizard(
+        WizardStepFailed(traccar.errorMessage ?? 'Traccar geofence creation failed'),
+        traccar.errorMessage ?? 'No pudimos guardar la zona en el servidor',
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _wizardState = Mode8WizardState.success;
+      _isCreating = false;
+    });
+    _showSuccess();
+  }
+
+  /// Pick the top 3 MACs from a SCAN reply payload, or fall back to
+  /// placeholder MACs when the device returns nothing usable.
+  ///
+  /// V2.1.8 firmware quirk: SCAN sometimes returns just `"#"` (an empty
+  /// list) even when WiFi APs are clearly in range. When that happens
+  /// we still register placeholder MACs so the device transitions into
+  /// Mode 8 — the GPS geofence (set in step 3) provides the actual
+  /// "is at home?" check; the WiFi anchors are a redundant signal that
+  /// will simply never match. Once Mictrack clarifies SCAN behavior
+  /// (PLAN.md Epic 3) this can be tightened.
+  ///
+  /// Returns null only if the SCAN call itself didn't return Ok.
+  List<String>? _parseScanResult(WizardStepResult result) {
+    if (result is! WizardStepOk) return null;
+    final raw = result.payload.trim();
+    if (raw.isEmpty || raw == '#') {
+      return ['000000000001', '000000000002', '000000000003'];
+    }
+    final parsed = raw
+        .split(',')
+        .map((e) => e.split(':').first.trim())
+        .where((e) => RegExp(r'^[0-9A-Fa-f]{12}$|^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$').hasMatch(e))
+        .take(3)
+        .toList();
+    if (parsed.length < 3) {
+      return ['000000000001', '000000000002', '000000000003'];
+    }
+    return parsed;
+  }
+
+  /// Halt the wizard, surface a Spanish-language error, and clear
+  /// _isCreating so the user can retry.
+  void _failWizard(WizardStepResult result, String userMessage) {
+    if (!mounted) return;
+    String detail;
+    if (result is WizardStepQueueExpired) {
+      detail = 'Tu PetTrack no respondió a tiempo. '
+          'Llévalo cerca de una ventana o muévelo para despertarlo.';
+    } else if (result is WizardStepDeviceOffline) {
+      detail = 'No estamos detectando tu PetTrack. Asegúrate de que esté encendido.';
+    } else if (result is WizardStepTimedOut) {
+      detail = 'Tu PetTrack no terminó de aplicar la configuración. '
+          'Inténtalo de nuevo en unos segundos.';
+    } else if (result is WizardStepDeviceRejected) {
+      detail = 'Tu PetTrack rechazó la orden (${result.payload}). Inténtalo de nuevo.';
+    } else if (result is WizardStepFailed) {
+      detail = result.error;
+    } else {
+      detail = 'Estado inesperado';
+    }
+    setState(() {
+      _wizardState = Mode8WizardState.error;
+      _isCreating = false;
+    });
+    _showError('$userMessage. $detail');
   }
 
   void _showSuccess() {
