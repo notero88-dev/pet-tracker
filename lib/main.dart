@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -16,8 +19,34 @@ import 'services/fcm_service.dart';
 import 'utils/app_navigator.dart';
 import 'utils/petti_theme.dart';
 
+/// Accept the droplet's self-signed TLS certificate in debug builds ONLY.
+///
+/// The droplet at 64.23.156.25 currently serves HTTPS with a self-signed
+/// cert (no domain → no Let's Encrypt yet, see PLAN.md Epic 6). Without
+/// this override the Flutter HTTP client refuses the connection. Gated
+/// strictly on kDebugMode so production / release builds enforce normal
+/// certificate validation. The override is also restricted to the known
+/// droplet IP — any other host with a bad cert is still rejected.
+class _DropletSelfSignedOverrides extends HttpOverrides {
+  static const _allowedHosts = {'64.23.156.25'};
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (cert, host, port) {
+        return _allowedHosts.contains(host);
+      };
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Self-signed cert acceptance — debug builds against our own droplet only.
+  // See _DropletSelfSignedOverrides for the gating logic.
+  if (kDebugMode) {
+    HttpOverrides.global = _DropletSelfSignedOverrides();
+  }
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
