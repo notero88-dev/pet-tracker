@@ -336,6 +336,32 @@ class ProvisioningApi {
     );
   }
 
+  /// "Pet is lost" / search mode — flips the device into Mode 1 (real-time
+  /// reporting, always-on TCP, no motion gating). Burns battery FAST: a
+  /// fully-charged Petti drops to ~10-20% within 24h on Mode 1 with T=30s.
+  /// Pair with a UX warning before enabling and a clear "back to normal"
+  /// affordance to restore Mode 8 once the pet is found.
+  ///
+  /// Per Mictrack protocol PDF §3.3.1, Mode 1 T range is [10,600] seconds.
+  /// We default to 30s — same cadence as Mode 8 outdoor — to keep the
+  /// position-stream UX consistent across the two modes.
+  Future<WizardStepResult> setModeRealtime({
+    required String imei,
+    int intervalSeconds = 30,
+    int queueMs = 60000,
+  }) async {
+    if (intervalSeconds < 10 || intervalSeconds > 600) {
+      throw ArgumentError(
+          'intervalSeconds must be 10..600 for Mode 1, got $intervalSeconds');
+    }
+    return _runWizardCommand(
+      imei: imei,
+      pathSuffix: 'mode',
+      body: {'type': 'realtime', 'intervalSeconds': intervalSeconds},
+      queueMs: queueMs,
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Home-setup intent — Phase 1 reconciler. Replaces the imperative 4-call
   // wizard above with a desired-state contract: post intent, navigate away,

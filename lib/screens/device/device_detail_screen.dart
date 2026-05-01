@@ -31,6 +31,8 @@ import 'package:provider/provider.dart';
 import '../../models/device.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
+import '../../services/provisioning_api.dart';
+import '../../services/wizard_step_result.dart';
 import '../../utils/constants.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/device_commands_sheet.dart';
@@ -52,6 +54,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   Timer? _updateTimer;
   bool _isLiveMode = false;
   bool _showHistory = false;
+  bool _isFlippingMode = false; // true while a Mode 1/8 command is in flight
+  late final ProvisioningApi _api = ProvisioningApi();
 
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
@@ -141,16 +145,125 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     );
   }
 
-  void _toggleLiveMode() {
-    setState(() => _isLiveMode = !_isLiveMode);
+  /// "Modo LIVE" / "Pet is lost" toggle.
+  ///
+  /// On enable: confirm with the user (battery cost warning) → fire
+  /// MODE,1,30 to the device → on success, switch the app to high-cadence
+  /// polling. On disable: confirm restore → fire MODE,8,30 → switch
+  /// polling back to normal.
+  ///
+  /// We surface failures inline (snackbar) without flipping the toggle,
+  /// so the visual state always reflects the device's actual mode (or our
+  /// best belief of it). Only flip the bool AFTER the device confirms the
+  /// command landed.
+  ///
+  /// Known limitations (this commit):
+  ///   - State is per-screen-session. Closing and reopening the screen
+  ///     resets to false. Cross-session persistence (shared_preferences
+  ///     keyed by IMEI) is a follow-up.
+  ///   - No home-screen indicator while the mode is active. Also follow-up.
+  ///   - On disable we always restore Mode 8 with T=30. If the device was
+  ///     originally in a different Mode 8 cadence, we lose that nuance.
+  ///     Acceptable for v1 — the home-setup wizard always uses T=30.
+  Future<void> _toggleLiveMode() async {
+    if (_isFlippingMode) return; // debounce double-tap
+    final enabling = !_isLiveMode;
 
-    if (_isLiveMode) {
-      _startLiveUpdates();
-      final traccar = Provider.of<TraccarProvider>(context, listen: false);
-      traccar.requestPositionNow(widget.device.traccarId!);
-    } else {
-      _startNormalUpdates();
+    final confirmed = await _confirmModeFlip(enabling);
+    if (!confirmed || !mounted) return;
+
+    setState(() => _isFlippingMode = true);
+    try {
+      final result = enabling
+          ? await _api.setModeRealtime(imei: widget.device.uniqueId, intervalSeconds: 30)
+          : await _api.setModeHome(imei: widget.device.uniqueId, intervalSeconds: 30);
+      if (!mounted) return;
+
+      if (result is! WizardStepOk) {
+        _showModeFlipError(result, enabling);
+        return;
+      }
+
+      // Device confirmed. Flip UI state + adjust polling cadence to match.
+      setState(() => _isLiveMode = enabling);
+      if (enabling) {
+        _startLiveUpdates();
+        final traccar = Provider.of<TraccarProvider>(context, listen: false);
+        traccar.requestPositionNow(widget.device.traccarId!);
+      } else {
+        _startNormalUpdates();
+      }
+      _showModeFlipSuccess(enabling);
+    } finally {
+      if (mounted) setState(() => _isFlippingMode = false);
     }
+  }
+
+  Future<bool> _confirmModeFlip(bool enabling) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(enabling ? '¿Activar modo de búsqueda?' : '¿Volver a modo normal?'),
+        content: Text(
+          enabling
+              ? 'Petti reportará su ubicación en tiempo real. La batería '
+                  'se consumirá mucho más rápido — apaga este modo cuando '
+                  'la encuentres.'
+              : 'Petti volverá a modo casa (ahorro de batería). Solo '
+                  'reportará cuando salga de la zona segura.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: enabling ? PettiColors.alert : PettiColors.sabana,
+              foregroundColor: PettiColors.cloud,
+            ),
+            child: Text(enabling ? 'Buscar a Petti' : 'Volver a normal'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  void _showModeFlipError(WizardStepResult result, bool wasEnabling) {
+    String message;
+    if (result is WizardStepDeviceOffline) {
+      message = 'No estamos detectando a Petti. Verifica que esté encendida.';
+    } else if (result is WizardStepTimedOut) {
+      message = 'Petti no respondió a tiempo. Inténtalo de nuevo en un momento.';
+    } else if (result is WizardStepQueueExpired) {
+      message = 'Petti no se conectó a tiempo. Vuelve a intentar cuando esté en línea.';
+    } else if (result is WizardStepDeviceRejected) {
+      message = 'Petti rechazó el cambio de modo. Inténtalo de nuevo.';
+    } else if (result is WizardStepFailed) {
+      message = 'No pudimos cambiar el modo: ${result.error}';
+    } else {
+      message = 'No pudimos cambiar el modo. Inténtalo de nuevo.';
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: PettiColors.alert,
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
+
+  void _showModeFlipSuccess(bool enabling) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        enabling
+            ? 'Modo de búsqueda activado. Petti está en tiempo real.'
+            : 'Petti volvió a modo casa.',
+      ),
+      backgroundColor: enabling ? PettiColors.alert : PettiColors.sabana,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
+    ));
   }
 
   // ----------------------------------------------------- build
@@ -444,14 +557,25 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _toggleLiveMode,
-                    icon: Icon(
-                      _isLiveMode
-                          ? Icons.stop_rounded
-                          : Icons.play_arrow_rounded,
-                    ),
+                    // Disable while a mode-flip command is in flight so a
+                    // double-tap can't fire two commands.
+                    onPressed: _isFlippingMode ? null : _toggleLiveMode,
+                    icon: _isFlippingMode
+                        ? const SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _isLiveMode
+                                ? Icons.stop_rounded
+                                : Icons.search_rounded,
+                          ),
                     label: Text(
-                      _isLiveMode ? 'Detener' : 'Modo LIVE',
+                      _isFlippingMode
+                          ? 'Cambiando...'
+                          : _isLiveMode
+                              ? 'Detener búsqueda'
+                              : 'Buscar a Petti',
                     ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _isLiveMode
