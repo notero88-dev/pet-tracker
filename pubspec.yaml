@@ -46,6 +46,8 @@ dependencies:
   shared_preferences: ^2.3.4
   path_provider: ^2.1.5
   url_launcher: ^6.3.1
+  # UUID v4 for home-setup intent idempotency keys (Phase 1 reconciler).
+  uuid: ^4.5.1
 
 dev_dependencies:
   flutter_test:

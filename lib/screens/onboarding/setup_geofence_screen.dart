@@ -8,9 +8,12 @@
 // Map circle uses Sabana (safe-zone color) instead of legacy green;
 // fixed-position center crosshair becomes a Petti compass marker.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../models/device.dart';
 import '../../models/position.dart';
@@ -383,55 +386,80 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       imei: imei,
     );
 
-    // ---- Step 1: SCAN — collect nearby WiFi APs from the device.
-    setState(() => _wizardState = Mode8WizardState.scanning);
-    final scanResult = await _api.scan(imei: imei);
-    final macs = _parseScanResult(scanResult);
-    if (macs == null) {
-      _resolveTracker(trackerId, scanResult);
-      _failWizard(scanResult, 'No pudimos leer las redes WiFi de tu casa');
+    // ---- Phase 1 reconciler: post intent + poll status -----------------
+    //
+    // Replaces the legacy 4-call sequence (scan / access-points / geo-fence
+    // / mode) with a single POST that captures intent. Backend reconciles
+    // device-side. We keep the wizard on-screen during Phase 1 (no
+    // decouple-then-navigate yet) so this swap is a pure backend cutover —
+    // the user's wait time is unchanged, but the server now owns
+    // durability + retry. Decoupling lands as a Phase 1.1 UX follow-up.
+    //
+    // Plan: pettrack-backend/docs/plans/2026-04-30-home-setup-reconciler.md
+
+    final intentId = const Uuid().v4();
+
+    final HomeSetupIntent posted;
+    try {
+      posted = await _api.postHomeSetup(
+        imei: imei,
+        intentId: intentId,
+        homeLat: _center.latitude,
+        homeLng: _center.longitude,
+        radiusMeters: _radiusMeters.round(),
+        petName: widget.petName,
+      );
+    } on HomeSetupApiException catch (e) {
+      final failure = WizardStepFailed('home-setup post failed: $e');
+      _resolveTracker(trackerId, failure);
+      _failWizard(failure, 'No pudimos enviar la configuración');
       return;
     }
 
-    // ---- Step 2: AP,,,MAC1,MAC2,MAC3 — register home anchors.
-    setState(() => _wizardState = Mode8WizardState.settingMacs);
-    final apResult = await _api.setAccessPoints(
-      imei: imei,
-      mac1: macs[0],
-      mac2: macs[1],
-      mac3: macs[2],
-    );
-    if (apResult is! WizardStepOk) {
-      _resolveTracker(trackerId, apResult);
-      _failWizard(apResult, 'No pudimos memorizar tu casa');
+    // Poll until terminal. 3s cadence matches the home-screen banner so
+    // the two surfaces feel consistent when we wire the banner in 1.1.
+    HomeSetupIntent latest = posted;
+    while (!latest.isTerminal && mounted) {
+      _applyIntentToWizardState(latest);
+      await Future.delayed(const Duration(seconds: 3));
+      try {
+        final next = await _api.getHomeSetupIntent(
+          imei: imei, intentId: intentId,
+        );
+        if (next == null) {
+          // Row reaped or imei mismatch — treat as a hard failure.
+          final failure = WizardStepFailed('intent disappeared mid-poll');
+          _resolveTracker(trackerId, failure);
+          _failWizard(failure, 'Perdimos el rastro de la configuración');
+          return;
+        }
+        latest = next;
+      } on HomeSetupApiException catch (e) {
+        // Transient poll failures shouldn't blow up the wizard — the
+        // intent is durable on the server, so we keep trying. After a
+        // few consecutive failures we'd surface, but Phase 1 keeps it
+        // simple: retry forever while the user is on-screen.
+        // (Phase 2 banner UX has explicit "tomó más tiempo" copy.)
+        // ignore: avoid_print
+        print('home-setup poll error: $e — retrying');
+      }
+    }
+
+    if (!mounted) return;
+
+    if (!latest.isSuccess) {
+      // Map terminal-failure status onto our existing wizard error UI.
+      final failure = WizardStepFailed(
+        latest.lastError ?? 'reconciler ended in ${latest.status}',
+      );
+      _resolveTracker(trackerId, failure);
+      _failWizard(failure, _spanishForFailedStatus(latest));
       return;
     }
 
-    // ---- Step 3: GEO,LAT,LON,RADIUS — set the home geofence center.
-    // We use explicit coordinates (not SEARCH) because we already know
-    // the user's chosen location, and SEARCH is unreliable on V2.1.8
-    // firmware (PLAN.md Epic 3).
-    setState(() => _wizardState = Mode8WizardState.settingHomeZone);
-    final geoResult = await _api.setGeoFence(
-      imei: imei,
-      latitude: _center.latitude,
-      longitude: _center.longitude,
-      radiusMeters: _radiusMeters.round(),
-    );
-    if (geoResult is! WizardStepOk) {
-      _resolveTracker(trackerId, geoResult);
-      _failWizard(geoResult, 'No pudimos dibujar tu zona segura');
-      return;
-    }
-
-    // ---- Step 4: MODE,8,30 — enable Home Mode with 30s wake window.
+    // Server reports configured; reflect that as the final pre-Traccar
+    // step in the on-screen wizard before kicking off step 5.
     setState(() => _wizardState = Mode8WizardState.enteringMode8);
-    final modeResult = await _api.setModeHome(imei: imei, intervalSeconds: 30);
-    if (modeResult is! WizardStepOk) {
-      _resolveTracker(trackerId, modeResult);
-      _failWizard(modeResult, 'No pudimos activar el ahorro de batería');
-      return;
-    }
 
     // ---- Step 5: server-side Traccar geofence (alert evaluation).
     if (!mounted) return;
@@ -464,6 +492,48 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     _showSuccess();
   }
 
+  /// Reflect a polled HomeSetupIntent's current step into the on-screen
+  /// wizard timeline. Used during the polling loop to keep the visual
+  /// progress in sync with what the server-side runner is actually doing.
+  void _applyIntentToWizardState(HomeSetupIntent intent) {
+    if (!mounted) return;
+    Mode8WizardState next;
+    switch (intent.step) {
+      case 'scan':
+        next = Mode8WizardState.scanning;
+        break;
+      case 'ap':
+        next = Mode8WizardState.settingMacs;
+        break;
+      case 'geo':
+        next = Mode8WizardState.settingHomeZone;
+        break;
+      case 'mode':
+        next = Mode8WizardState.enteringMode8;
+        break;
+      default:
+        // pending / null step — keep prior state to avoid flicker.
+        return;
+    }
+    if (next != _wizardState) {
+      setState(() => _wizardState = next);
+    }
+  }
+
+  /// User-facing copy for a terminal non-success status. Mirrors the
+  /// banner-state taxonomy in the Phase 1 plan-doc.
+  String _spanishForFailedStatus(HomeSetupIntent intent) {
+    switch (intent.status) {
+      case 'cancelled':
+        return 'Configuración cancelada';
+      case 'superseded':
+        return 'Iniciaste otra configuración';
+      case 'failed':
+      default:
+        return 'No pudimos terminar la configuración';
+    }
+  }
+
   /// Map a WizardStepResult onto the matching PendingCommandStatus +
   /// optional error detail, and notify the tracker. Used at every
   /// failure exit so the banner always reflects reality.
@@ -489,35 +559,10 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     _tracker.resolve(id, status, errorDetail: detail);
   }
 
-  /// Pick the top 3 MACs from a SCAN reply payload, or fall back to
-  /// placeholder MACs when the device returns nothing usable.
-  ///
-  /// V2.1.8 firmware quirk: SCAN sometimes returns just `"#"` (an empty
-  /// list) even when WiFi APs are clearly in range. When that happens
-  /// we still register placeholder MACs so the device transitions into
-  /// Mode 8 — the GPS geofence (set in step 3) provides the actual
-  /// "is at home?" check; the WiFi anchors are a redundant signal that
-  /// will simply never match. Once Mictrack clarifies SCAN behavior
-  /// (PLAN.md Epic 3) this can be tightened.
-  ///
-  /// Returns null only if the SCAN call itself didn't return Ok.
-  List<String>? _parseScanResult(WizardStepResult result) {
-    if (result is! WizardStepOk) return null;
-    final raw = result.payload.trim();
-    if (raw.isEmpty || raw == '#') {
-      return ['000000000001', '000000000002', '000000000003'];
-    }
-    final parsed = raw
-        .split(',')
-        .map((e) => e.split(':').first.trim())
-        .where((e) => RegExp(r'^[0-9A-Fa-f]{12}$|^([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}$').hasMatch(e))
-        .take(3)
-        .toList();
-    if (parsed.length < 3) {
-      return ['000000000001', '000000000002', '000000000003'];
-    }
-    return parsed;
-  }
+  // _parseScanResult removed 2026-04-30: SCAN parsing moved server-side
+  // to the Phase 1 reconciler (provisioning-api/src/homeSetupRunner.js
+  // ::parseTopMacs). The legacy parser had a known firmware-quirk
+  // workaround that's no longer the app's concern.
 
   /// Halt the wizard, surface a Spanish-language error, and clear
   /// _isCreating so the user can retry.

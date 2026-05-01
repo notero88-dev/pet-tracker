@@ -335,4 +335,168 @@ class ProvisioningApi {
       queueMs: queueMs,
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Home-setup intent — Phase 1 reconciler. Replaces the imperative 4-call
+  // wizard above with a desired-state contract: post intent, navigate away,
+  // poll status. The four wizard methods above are kept for back-compat
+  // (the inline runner inside provisioning-api still uses them) and will be
+  // marked deprecated in Phase 3.
+  //
+  // See pettrack-backend/docs/plans/2026-04-30-home-setup-reconciler.md.
+  // ---------------------------------------------------------------------------
+
+  /// Capture the user's home-setup intent. Returns immediately with 202;
+  /// reconciliation runs server-side. Poll [getHomeSetupIntent] for status.
+  ///
+  /// `intentId` is the idempotency key — generate once with `Uuid().v4()` and
+  /// reuse on retry. Posting the same intentId twice with the same body is
+  /// safe; with a different body returns 409.
+  Future<HomeSetupIntent> postHomeSetup({
+    required String imei,
+    required String intentId,
+    required double homeLat,
+    required double homeLng,
+    required int radiusMeters,
+    required String petName,
+  }) async {
+    final res = await _http.post(
+      Uri.parse('$baseUrl/devices/$imei/home-setup'),
+      headers: _headers,
+      body: jsonEncode({
+        'intentId': intentId,
+        'homeLat': homeLat,
+        'homeLng': homeLng,
+        'radiusMeters': radiusMeters,
+        'petName': petName,
+      }),
+    );
+    final json = _decodeOrThrow(res, op: 'postHomeSetup');
+    return HomeSetupIntent.fromJson(json['intent'] as Map<String, dynamic>);
+  }
+
+  /// Read the current state of an intent. Returns null on 404 (the intent
+  /// row was reaped or the imei/intentId don't match).
+  Future<HomeSetupIntent?> getHomeSetupIntent({
+    required String imei,
+    required String intentId,
+  }) async {
+    final res = await _http.get(
+      Uri.parse('$baseUrl/devices/$imei/home-setup/$intentId'),
+      headers: _headers,
+    );
+    if (res.statusCode == 404) return null;
+    final json = _decodeOrThrow(res, op: 'getHomeSetupIntent');
+    return HomeSetupIntent.fromJson(json['intent'] as Map<String, dynamic>);
+  }
+
+  /// Cancel an in-flight intent. Phase 1 just flips status to cancelled;
+  /// Phase 3 will fire explicit rollback (MODE,1,60 + AP,,,) on the device.
+  Future<HomeSetupIntent?> cancelHomeSetup({
+    required String imei,
+    required String intentId,
+  }) async {
+    final res = await _http.delete(
+      Uri.parse('$baseUrl/devices/$imei/home-setup/$intentId'),
+      headers: _headers,
+    );
+    if (res.statusCode == 404 || res.statusCode == 409) return null;
+    final json = _decodeOrThrow(res, op: 'cancelHomeSetup');
+    return HomeSetupIntent.fromJson(json['intent'] as Map<String, dynamic>);
+  }
+
+  Map<String, dynamic> _decodeOrThrow(http.Response res, {required String op}) {
+    Map<String, dynamic> json;
+    try {
+      json = jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw HomeSetupApiException(
+        'Malformed response',
+        statusCode: res.statusCode,
+        op: op,
+      );
+    }
+    if (res.statusCode == 200 || res.statusCode == 202) return json;
+    throw HomeSetupApiException(
+      (json['error'] ?? 'unknown error').toString(),
+      statusCode: res.statusCode,
+      op: op,
+    );
+  }
+}
+
+/// One row from device_desired_state, as returned by the home-setup API.
+class HomeSetupIntent {
+  final String intentId;
+  final String imei;
+  final int intentVersion;
+  final String status; // pending | reconciling | configured | failed | cancelled | superseded
+  final String? step; // scan | ap | geo | mode | null when terminal
+  final double targetLat;
+  final double targetLng;
+  final int targetRadiusM;
+  final List<String>? targetMacs;
+  final String? petName;
+  final int attempts;
+  final String? lastError;
+  final String? supersededBy;
+  final DateTime requestedAt;
+  final DateTime updatedAt;
+  final int elapsedSeconds;
+
+  HomeSetupIntent({
+    required this.intentId,
+    required this.imei,
+    required this.intentVersion,
+    required this.status,
+    required this.step,
+    required this.targetLat,
+    required this.targetLng,
+    required this.targetRadiusM,
+    required this.targetMacs,
+    required this.petName,
+    required this.attempts,
+    required this.lastError,
+    required this.supersededBy,
+    required this.requestedAt,
+    required this.updatedAt,
+    required this.elapsedSeconds,
+  });
+
+  bool get isTerminal => const {
+        'configured', 'verified', 'failed', 'cancelled', 'superseded',
+      }.contains(status);
+
+  bool get isSuccess =>
+      status == 'configured' || status == 'verified';
+
+  factory HomeSetupIntent.fromJson(Map<String, dynamic> j) {
+    return HomeSetupIntent(
+      intentId: j['intentId'] as String,
+      imei: j['imei'] as String,
+      intentVersion: (j['intentVersion'] as num).toInt(),
+      status: j['status'] as String,
+      step: j['step'] as String?,
+      targetLat: (j['targetLat'] as num).toDouble(),
+      targetLng: (j['targetLng'] as num).toDouble(),
+      targetRadiusM: (j['targetRadiusM'] as num).toInt(),
+      targetMacs: (j['targetMacs'] as List?)?.cast<String>(),
+      petName: j['petName'] as String?,
+      attempts: (j['attempts'] as num?)?.toInt() ?? 0,
+      lastError: j['lastError'] as String?,
+      supersededBy: j['supersededBy'] as String?,
+      requestedAt: DateTime.parse(j['requestedAt'] as String),
+      updatedAt: DateTime.parse(j['updatedAt'] as String),
+      elapsedSeconds: (j['elapsedSeconds'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class HomeSetupApiException implements Exception {
+  final String message;
+  final int statusCode;
+  final String op;
+  HomeSetupApiException(this.message, {required this.statusCode, required this.op});
+  @override
+  String toString() => 'HomeSetupApiException($op, $statusCode): $message';
 }
