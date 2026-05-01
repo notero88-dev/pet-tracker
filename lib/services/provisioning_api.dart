@@ -375,6 +375,21 @@ class ProvisioningApi {
     return HomeSetupIntent.fromJson(json['intent'] as Map<String, dynamic>);
   }
 
+  /// Look up the most-recent active intent for an IMEI. Returns null when
+  /// no active intent exists (the home-screen banner uses this on cold
+  /// start so it doesn't have to remember intentId across app restarts).
+  Future<HomeSetupIntent?> getActiveHomeSetupIntent({
+    required String imei,
+  }) async {
+    final res = await _http.get(
+      Uri.parse('$baseUrl/devices/$imei/home-setup'),
+      headers: _headers,
+    );
+    if (res.statusCode == 404) return null;
+    final json = _decodeOrThrow(res, op: 'getActiveHomeSetupIntent');
+    return HomeSetupIntent.fromJson(json['intent'] as Map<String, dynamic>);
+  }
+
   /// Read the current state of an intent. Returns null on 404 (the intent
   /// row was reaped or the imei/intentId don't match).
   Future<HomeSetupIntent?> getHomeSetupIntent({

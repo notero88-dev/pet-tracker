@@ -6,6 +6,7 @@ import '../../providers/notification_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/petti_primitives.dart';
+import '../../widgets/petti/home_setup_status_banner.dart';
 import '../onboarding/qr_scanner_screen.dart';
 import '../device/device_detail_screen.dart';
 import '../notifications/notifications_screen.dart';
@@ -257,10 +258,19 @@ class _HomeScreenState extends State<HomeScreen> {
           PettiSpacing.s8,
         ),
         children: [
+          // Home-setup status banner (Phase 1.1). Renders one banner per
+          // device that has an active intent on the server. Self-polls;
+          // collapses to zero height when no intent is in flight. Lives
+          // ABOVE the section header so the user sees "we're configuring
+          // Petti" before the device list itself.
+          for (final device in traccar.devices)
+            if (device.uniqueId.isNotEmpty)
+              HomeSetupStatusBanner(imei: device.uniqueId),
           // Section header — quiet "Tus mascotas" eyebrow above the cards.
           Padding(
             padding: const EdgeInsets.only(
               left: PettiSpacing.s2,
+              top: PettiSpacing.s2,
               bottom: PettiSpacing.s3,
             ),
             child: Text(
