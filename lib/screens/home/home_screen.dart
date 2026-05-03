@@ -7,7 +7,7 @@ import '../../services/firestore_service.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/petti_primitives.dart';
 import '../../widgets/petti/home_setup_status_banner.dart';
-import '../onboarding/qr_scanner_screen.dart';
+import '../onboarding/redesign/onboarding_flow_controller.dart';
 import '../device/device_detail_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../profile/settings_screen.dart';
@@ -286,9 +286,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _navigateToScanner() {
+    // Cut over from legacy QRScannerScreen → redesigned A4/A6 flow on
+    // 2026-05-03. The OnboardingFlowController owns the full A4 →
+    // A4.5 → provision → A6 sequence including pet profile capture
+    // and the Mode 8 wizard. See:
+    //   docs/plans/2026-04-30-home-setup-reconciler.md
+    //   lib/screens/onboarding/redesign/onboarding_flow_controller.dart
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+      MaterialPageRoute(builder: (_) => const OnboardingFlowController()),
     );
   }
 }
