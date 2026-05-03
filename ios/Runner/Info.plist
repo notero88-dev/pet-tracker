@@ -66,5 +66,64 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
+	<!-- ─── Permissions (Spanish, Colombia mass-market) ───────────── -->
+	<!-- Required by `location` package. iOS hard-crashes the app at
+	     first location request if this string is absent. Shown in the
+	     OS-level permission dialog the first time A6 Pick Location
+	     resolves the phone's GPS as the initial map center. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Petti usa tu ubicación para centrar el mapa cuando configuras la zona segura de tu mascota.</string>
+
+	<!-- Required by `mobile_scanner` for QR-code scanning during A4
+	     onboarding. Without this, mobile_scanner throws and the camera
+	     view never appears. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Petti necesita la cámara para escanear el código QR de tu dispositivo.</string>
+
+	<!-- Required by `image_picker` even if photo selection is deferred,
+	     because the package's iOS plugin queries permission at init
+	     time on some iOS versions. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Petti puede usar tu galería si decides agregar una foto de tu mascota.</string>
+
+	<!-- ─── Background modes for push notifications ──────────────── -->
+	<!-- Required for FCM background delivery. Pairs with the
+	     "Push Notifications" capability you must enable in Xcode
+	     (Signing & Capabilities tab). See:
+	     pettrack-backend/docs/runbooks/ios-first-build.md -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>fetch</string>
+	</array>
+
+	<!-- ─── App Transport Security exception (TEMPORARY) ─────────── -->
+	<!-- The backend currently uses a self-signed TLS cert at
+	     64.23.156.25. iOS ATS rejects self-signed certs in
+	     production builds by default. This exception allows the
+	     specific droplet IP only.
+
+	     ⚠️ MUST BE REMOVED before any TestFlight or App Store build.
+	     The plan: register a real domain → Let's Encrypt cert →
+	     update AppConstants.provisioningApiUrl → drop this exception.
+	     See: pettrack-backend/docs/runbooks/ios-first-build.md -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>64.23.156.25</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+				<key>NSExceptionRequiresForwardSecrecy</key>
+				<false/>
+				<key>NSTemporaryExceptionMinimumTLSVersion</key>
+				<string>TLSv1.0</string>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>
