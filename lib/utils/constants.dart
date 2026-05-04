@@ -10,7 +10,7 @@ class AppConstants {
   static String get traccarWebSocketUrl => 'ws://64.23.156.25:8082/api/socket';
   
   // App Info
-  static const String appName = 'PetTrack';
+  static const String appName = 'Petti';
   static const String appVersion = '1.0.0';
   static const String supportEmail = 'soporte@pettrack.co';
   

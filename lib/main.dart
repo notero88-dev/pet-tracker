@@ -109,7 +109,7 @@ class _PetTrackAppState extends State<PetTrackApp> {
         Provider<FCMService>.value(value: _fcm),
       ],
       child: MaterialApp(
-        title: 'PetTrack',
+        title: 'Petti',
         theme: PettiTheme.lightTheme,
         debugShowCheckedModeBanner: false,
         // These keys let FCM handlers (which run outside the widget tree)

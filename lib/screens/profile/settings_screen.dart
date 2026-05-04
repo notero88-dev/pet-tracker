@@ -433,7 +433,7 @@ class SettingsScreen extends StatelessWidget {
   void _showLicenses(BuildContext context) {
     showLicensePage(
       context: context,
-      applicationName: 'PetTrack',
+      applicationName: 'Petti',
       applicationVersion: '1.0.0',
       applicationLegalese: '© 2026 PetTrack Colombia',
     );
