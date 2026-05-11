@@ -150,7 +150,12 @@ class Mode8ConfigurationController {
     // mascota despierte". The runner keeps going in the background;
     // a future settings entry refresh will reflect the eventual
     // configured state.
-    final pollDeadline = DateTime.now().add(const Duration(seconds: 30));
+    //
+    // 2026-05-11: started at 30s, reduced to 8s after a live run where
+    // 30s of spinner felt broken. An online device completes all 4
+    // commands (AP/GEO/MODE/LEP) in under 5s; 8s gives some headroom
+    // without making the offline case feel like a hang.
+    final pollDeadline = DateTime.now().add(const Duration(seconds: 8));
 
     HomeSetupIntent latest = posted;
     while (!latest.isTerminal) {
@@ -163,7 +168,7 @@ class Mode8ConfigurationController {
         return Mode8WizardQueued(stepsCompleted: _stepsCompletedFor(latest));
       }
       _emitForStep(latest.step);
-      await Future.delayed(const Duration(seconds: 3));
+      await Future.delayed(const Duration(seconds: 2));
       try {
         final next = await apiClient.getHomeSetupIntent(
           imei: imei,
