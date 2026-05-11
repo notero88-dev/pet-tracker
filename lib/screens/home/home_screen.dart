@@ -5,12 +5,12 @@ import '../../providers/traccar_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/petti_theme.dart';
-import '../../widgets/petti/petti_primitives.dart';
 import '../onboarding/redesign/onboarding_flow_controller.dart';
 import '../device/device_detail_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../profile/settings_screen.dart';
 import '../activity/pet_activity_screen.dart';
+import '../activity/pet_avatar_palette.dart';
 import '../../services/real_activity_builder.dart';
 
 /// Home — the main daily-use screen.
@@ -32,6 +32,22 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _initializeTraccar();
+    _dedupePets();
+  }
+
+  /// One-shot cleanup on every launch. Deletes duplicate Firestore pet
+  /// docs that point to the same traccarDeviceId, keeping the most-recent
+  /// one. Idempotent — no-op when there are no duplicates. See
+  /// FirestoreService.dedupePetsByDevice for the why.
+  Future<void> _dedupePets() async {
+    try {
+      final n = await FirestoreService().dedupePetsByDevice();
+      if (n > 0) {
+        debugPrint('[home_screen] dedupePetsByDevice: removed $n duplicate(s)');
+      }
+    } catch (e) {
+      debugPrint('[home_screen] dedupePetsByDevice failed: $e');
+    }
   }
 
   Future<void> _initializeTraccar() async {
@@ -71,30 +87,10 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: Text('Besti', style: PettiText.h2()),
         actions: [
-          // Activity dashboard — Garmin-flavored daily stats. Live load:
-          // the screen shows a loading skeleton, then renders metrics
-          // computed from Traccar position history. Falls back to demo
-          // data with a banner if the load fails.
-          IconButton(
-            icon: const Icon(Icons.monitor_heart_outlined),
-            tooltip: 'Actividad',
-            onPressed: () {
-              final traccar =
-                  Provider.of<TraccarProvider>(context, listen: false);
-              final firestore = FirestoreService();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PetActivityScreen.live(
-                    loader: () => realActivitiesForUser(
-                      traccar: traccar,
-                      firestore: firestore,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
+          // Activity icon moved out of the AppBar 2026-05-11 to match the
+          // home screen redesign in plans/2026-05-11-… — entry is now the
+          // dark "Ver actividad" CTA below the pet list.
+
           // Bell icon with optional unread badge.
           Consumer<NotificationProvider>(
             builder: (context, n, _) {
@@ -276,39 +272,54 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(
           PettiSpacing.s4,
-          PettiSpacing.s4,
+          PettiSpacing.s2,
           PettiSpacing.s4,
           // Bottom padding leaves room for the floating "Agregar mascota"
-          // FAB so the last card never sits behind it.
+          // FAB so the last card / CTA never sits behind it. PettiSpacing
+          // tops out at s8 (64); we add a manual gap on top of s8 inside
+          // a SizedBox below the CTA.
           PettiSpacing.s8,
         ),
         children: [
-          // Home-setup status banner — removed from home screen 2026-05-11
-          // (Phase B v2 of plans/2026-05-11-phone-side-home-zone.md). The
-          // banner was duplicating + contradicting the wizard's own
-          // "Zona de casa guardada · se aplicará cuando se mueva" success
-          // screen and the Settings entry card's configured variant.
-          // Because the gateway now queues commands for up to 4h waiting
-          // on the (offline) device, intents stay in 'reconciling' for
-          // hours — the banner would stick around showing "Configurando..."
-          // long after the user thought they were done.
-          //
-          // The widget file is left on disk in case we want a slimmer,
-          // copy-corrected version later, but it's no longer wired here.
-          // Section header — quiet "Tus mascotas" eyebrow above the cards.
+          // Headline section — matches the design bundle's home-screen
+          // pattern (plans/2026-05-11-phone-side-home-zone.md, the
+          // Pets + Activity Dashboard handoff). Replaces the previous
+          // uppercase "TUS MASCOTAS" eyebrow.
           Padding(
-            padding: const EdgeInsets.only(
-              left: PettiSpacing.s2,
-              top: PettiSpacing.s2,
-              bottom: PettiSpacing.s3,
+            padding: const EdgeInsets.fromLTRB(
+              PettiSpacing.s2,
+              PettiSpacing.s2,
+              PettiSpacing.s2,
+              PettiSpacing.s3,
             ),
-            child: Text(
-              'TUS MASCOTAS',
-              style: PettiText.meta(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Tus mascotas',
+                  style: PettiText.h2().copyWith(
+                    fontSize: 22,
+                    height: 1.1,
+                    letterSpacing: -0.55,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Toca una mascota para ver su ubicación.',
+                  style: PettiText.body().copyWith(
+                    fontSize: 13,
+                    color: PettiColors.trail,
+                  ),
+                ),
+              ],
             ),
           ),
           ...traccar.devices.map(
               (device) => _PetCard(device: device, traccar: traccar)),
+          const SizedBox(height: PettiSpacing.s4),
+          _VerActividadCta(),
+          // Tail spacer so the FAB never overlaps the dark CTA.
+          const SizedBox(height: PettiSpacing.s7),
         ],
       ),
     );
@@ -328,10 +339,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Single pet/device card. Tap → DeviceDetailScreen.
+/// Single pet/device card — design bundle's `PetCardSummary`.
 ///
-/// Layout: avatar + name + subtitle + battery + status chip in a horizontal
-/// PettiCard. Sized for one-handed thumb tap.
+/// Avatar gradient + name + (location · last sync OR "sin conexión" + last
+/// sync). Tap → DeviceDetailScreen (which has the map). Removed the
+/// PettiStatusPill + PettiBatteryBadge stack from the old card — battery /
+/// status now surface in the device-detail screen the user lands on.
 class _PetCard extends StatelessWidget {
   final dynamic device; // Device — keeping dynamic to avoid coupling to model
   final TraccarProvider traccar;
@@ -343,93 +356,115 @@ class _PetCard extends StatelessWidget {
     final position = traccar.getLastPosition(device.traccarId!);
     final bool isOnline = device.isOnline;
     final DateTime? lastUpdate = device.lastUpdate as DateTime?;
-    final int? battery = position?.batteryLevel;
 
-    // Status pill copy mirrors Traccar's "Activo hace 2 horas" pattern:
-    // green "En línea" when fresh (<30 min), muted "Activo hace X" when we
-    // have a known-but-stale lastUpdate, and a true "Sin señal" only when
-    // the device has never reported. Distinguishing stale vs. never-seen
-    // matters because the device commonly goes quiet on Mode 8 stationary
-    // — that's not a signal failure, it's expected reporting behavior.
-    final PettiStatus statusKind;
-    final String statusLabel;
-    if (isOnline) {
-      statusKind = PettiStatus.online;
-      statusLabel = 'En línea';
-    } else if (lastUpdate != null) {
-      statusKind = PettiStatus.warning;
-      statusLabel = 'Activo ${_relativeTimeEs(lastUpdate)}';
+    final lastSyncText = isOnline
+        ? 'En línea'
+        : (lastUpdate != null
+            ? _relativeTimeEs(lastUpdate)
+            : 'sin señal');
+
+    // Location subtitle:
+    //   online + position → "<address or coords> · <relative time>"
+    //   offline           → "Sin conexión · <last seen>"
+    final String subtitle;
+    final IconData subtitleIcon;
+    final Color subtitleIconColor;
+    if (isOnline && position != null) {
+      final loc = position.address?.isNotEmpty == true
+          ? position.address!
+          : position.coordinatesText;
+      subtitle = '$loc · $lastSyncText';
+      subtitleIcon = Icons.place;
+      subtitleIconColor = PettiColors.marigoldDim;
+    } else if (position != null) {
+      // Offline but we have a last-known position.
+      final loc = position.address?.isNotEmpty == true
+          ? position.address!
+          : position.coordinatesText;
+      subtitle = '$loc · $lastSyncText';
+      subtitleIcon = Icons.wifi_off_rounded;
+      subtitleIconColor = PettiColors.trail;
     } else {
-      statusKind = PettiStatus.offline;
-      statusLabel = 'Sin señal';
-    }
-
-    // Bucket battery to nearest 20% for the Petti badge (which expects
-    // 20/40/60/80/100 to keep visual states from being too noisy).
-    int? bucket;
-    if (battery != null) {
-      bucket = ((battery / 20).round() * 20).clamp(20, 100);
+      subtitle = 'Sin conexión · $lastSyncText';
+      subtitleIcon = Icons.wifi_off_rounded;
+      subtitleIconColor = PettiColors.trail;
     }
 
     final initial = (device.name as String).isNotEmpty
-        ? (device.name as String).substring(0, 1)
+        ? (device.name as String).substring(0, 1).toUpperCase()
         : '?';
 
-    // PettiCard doesn't take onTap; wrap it in Material+InkWell so the tap
-    // ripple respects the rounded corners and matches the rest of Petti's
-    // touch feedback.
     return Padding(
       padding: const EdgeInsets.only(bottom: PettiSpacing.s3),
       child: Material(
-        color: Colors.transparent,
+        color: Colors.white,
+        clipBehavior: Clip.antiAlias,
+        borderRadius: BorderRadius.circular(18),
+        elevation: 0,
         child: InkWell(
-          borderRadius: BorderRadius.circular(PettiRadii.md),
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => DeviceDetailScreen(device: device),
             ),
           ),
-          child: PettiCard(
-            // Override the default horizontal margin — we're already inside
-            // a ListView with horizontal padding.
-            margin: EdgeInsets.zero,
-            padding: const EdgeInsets.all(PettiSpacing.s4),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: PettiColors.midnight.withValues(alpha: 0.08),
+              ),
+            ),
+            padding: const EdgeInsets.all(14),
             child: Row(
               children: [
-                PettiPetAvatar(initial: initial, size: 56),
-                const SizedBox(width: PettiSpacing.s4),
+                _PetCircleAvatar(
+                  name: device.name as String,
+                  initial: initial,
+                  isOnline: isOnline,
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         device.name as String,
-                        style: PettiText.h4(),
+                        style: const TextStyle(
+                          fontFamily: 'Space Grotesk',
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: PettiColors.midnight,
+                          letterSpacing: -0.34,
+                          height: 1.15,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: PettiSpacing.s1),
-                      Text(
-                        position != null
-                            ? (position.address ?? position.coordinatesText)
-                            : 'Sin ubicación reciente',
-                        style: PettiText.bodySm()
-                            .copyWith(color: PettiColors.fgDim),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: PettiSpacing.s2),
+                      const SizedBox(height: 3),
                       Row(
                         children: [
-                          PettiStatusPill(
-                            kind: statusKind,
-                            label: statusLabel,
+                          Icon(
+                            subtitleIcon,
+                            size: 13,
+                            color: subtitleIconColor,
                           ),
-                          if (bucket != null) ...[
-                            const SizedBox(width: PettiSpacing.s2),
-                            PettiBatteryBadge(percentBucket: bucket),
-                          ],
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              subtitle,
+                              style: TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 12.5,
+                                color: isOnline
+                                    ? PettiColors.fg
+                                    : PettiColors.trail,
+                                letterSpacing: -0.0625,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -437,7 +472,8 @@ class _PetCard extends StatelessWidget {
                 ),
                 const Icon(
                   Icons.chevron_right,
-                  color: PettiColors.fgFaint,
+                  size: 20,
+                  color: PettiColors.trail,
                 ),
               ],
             ),
@@ -466,5 +502,176 @@ class _PetCard extends StatelessWidget {
     }
     final d = diff.inDays;
     return 'hace $d ${d == 1 ? 'día' : 'días'}';
+  }
+}
+
+/// Avatar — gradient circle + initial letter, with an online indicator
+/// dot at the bottom-right. Color picked deterministically via
+/// `petAvatarFor(name)` so the same pet always gets the same gradient.
+class _PetCircleAvatar extends StatelessWidget {
+  final String name;
+  final String initial;
+  final bool isOnline;
+  static const double size = 48;
+
+  const _PetCircleAvatar({
+    required this.name,
+    required this.initial,
+    required this.isOnline,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = petAvatarFor(name);
+    final dotSize = size * 0.28;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: palette,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color.fromRGBO(14, 27, 44, 0.10),
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              initial,
+              style: TextStyle(
+                fontFamily: 'Space Grotesk',
+                fontSize: size * 0.42,
+                fontWeight: FontWeight.w700,
+                color: PettiColors.midnight,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+          Positioned(
+            right: -1,
+            bottom: -1,
+            child: Container(
+              width: dotSize,
+              height: dotSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isOnline ? PettiColors.sabana : PettiColors.trail,
+                border: Border.all(color: PettiColors.cloud, width: 2),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Ver actividad" dark CTA — Garmin-style activity-screen entry, lives
+/// below the pet list. Replaces the activity icon previously in the
+/// AppBar.
+class _VerActividadCta extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: PettiColors.midnight,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      elevation: 0,
+      child: InkWell(
+        onTap: () {
+          final traccar =
+              Provider.of<TraccarProvider>(context, listen: false);
+          final firestore = FirestoreService();
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PetActivityScreen.live(
+                loader: () => realActivitiesForUser(
+                  traccar: traccar,
+                  firestore: firestore,
+                ),
+              ),
+            ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: PettiColors.midnight.withValues(alpha: 0.18),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: PettiColors.marigold.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.monitor_heart_outlined,
+                  color: PettiColors.marigold,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ver actividad',
+                      style: TextStyle(
+                        fontFamily: 'Space Grotesk',
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: PettiColors.cloud,
+                        letterSpacing: -0.225,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      'Paseos, pasos y frecuencia cardíaca',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11.5,
+                        color: PettiColors.cloud.withValues(alpha: 0.6),
+                        letterSpacing: -0.058,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: PettiColors.cloud.withValues(alpha: 0.55),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

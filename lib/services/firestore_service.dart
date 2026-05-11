@@ -134,6 +134,65 @@ class FirestoreService {
     await _db.collection('pets').doc(petId).delete();
   }
 
+  /// One-shot cleanup: deduplicate pet docs that point to the same
+  /// `traccarDeviceId`. For each duplicate group, keeps the row with the
+  /// most-recent `createdAt` and deletes the rest. Returns the number of
+  /// docs deleted.
+  ///
+  /// Why: between 2026-04 and 2026-05 our provisioning flow created a new
+  /// Firestore pet doc on every onboarding attempt, including retries.
+  /// Verified 2026-05-11 — a single test user had 6 docs all named
+  /// "test_1"/"TEST_1" pointing to the same traccarDeviceId. The activity
+  /// dashboard's pet picker rendered 6 near-identical pills, only one of
+  /// them showing real data. This routine is idempotent — safe to call
+  /// on every app launch; no-op when there are no duplicates.
+  ///
+  /// Does NOT touch pets where `traccarDeviceId` is null or non-int —
+  /// those rows are kept individually (they may be incomplete provisioning
+  /// attempts the user wants to retry).
+  Future<int> dedupePetsByDevice() async {
+    if (_currentUserId == null) return 0;
+    final pets = await getUserPets();
+    if (pets.length <= 1) return 0;
+
+    // Group by traccarDeviceId; skip rows without one.
+    final byDeviceId = <int, List<Map<String, dynamic>>>{};
+    for (final pet in pets) {
+      final id = pet['traccarDeviceId'];
+      if (id is! int) continue;
+      byDeviceId.putIfAbsent(id, () => []).add(pet);
+    }
+
+    var deletedCount = 0;
+    for (final entry in byDeviceId.entries) {
+      final group = entry.value;
+      if (group.length <= 1) continue;
+      // Sort descending by createdAt — most recent first.
+      group.sort((a, b) {
+        final aT = a['createdAt'];
+        final bT = b['createdAt'];
+        final aTime = aT is Timestamp ? aT.toDate() : DateTime.utc(1970);
+        final bTime = bT is Timestamp ? bT.toDate() : DateTime.utc(1970);
+        return bTime.compareTo(aTime);
+      });
+      // Keep group[0]; delete the rest.
+      for (var i = 1; i < group.length; i++) {
+        final docId = group[i]['id'] as String?;
+        if (docId == null) continue;
+        try {
+          await _db.collection('pets').doc(docId).delete();
+          deletedCount++;
+        } catch (e) {
+          // Don't let one failed delete kill the whole sweep — log and
+          // continue. Next launch will retry.
+          // ignore: avoid_print
+          print('[dedupePetsByDevice] failed to delete $docId: $e');
+        }
+      }
+    }
+    return deletedCount;
+  }
+
   /// Link device to pet
   Future<void> linkDeviceToPet({
     required String petId,
