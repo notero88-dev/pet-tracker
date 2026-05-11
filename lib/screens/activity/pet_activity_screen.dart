@@ -159,7 +159,18 @@ class _PetActivityScreenState extends State<PetActivityScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _PetHeaderStrip(pet: pet),
-                    if (pet.status == PetActivityStatus.offline)
+                    // 2026-05-11: only fall back to the "está sin conexión"
+                    // empty card when the pet has NO historical data. The
+                    // offline status flag is set whenever the device's last
+                    // fix is >10 min old — which is normal for Mode 8 + the
+                    // current Mt710 sleep cycles — so it can't gate the
+                    // rings on its own. If we have ANY positions across the
+                    // 7-day window, the rings (and today's 0-km empty state
+                    // for non-walk days) are more useful than the bouncing
+                    // "sin conexión" empty card.
+                    if (pet.status == PetActivityStatus.offline &&
+                        pet.distanceKm == 0 &&
+                        pet.weeklyDistanceKm.every((d) => d == 0))
                       _OfflineState(pet: pet)
                     else ...[
                       _RangeTabs(
