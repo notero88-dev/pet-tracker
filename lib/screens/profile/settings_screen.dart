@@ -17,7 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/device.dart';
 import '../../utils/petti_theme.dart';
-import '../debug/wifi_probe_screen.dart';
+import '../device/home_zone_setup_screen.dart';
 import 'pet_profile_screen.dart';
 import 'user_profile_screen.dart';
 
@@ -142,29 +142,35 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _openUrl('https://pettrack.co/terms'),
           ),
           // -----------------------------------------------------------------
-          // Diagnostic tile for Plan #2 Phase A: WiFi + GPS probe.
-          // Verifies the HotspotConfiguration entitlement + location auth
-          // give us real SSID/BSSID/GPS values on a physical iPhone before
-          // we wire phone-side home-zone setup into the real flow (Phase B).
-          // Visible in ALL builds during dev so testing on the prod
-          // build doesn't require swapping channels. Replaced by the
-          // real "Configurar zona de casa" entry in Phase B.
-          // See plans/2026-05-11-phone-side-home-zone.md.
+          // Dispositivo — Phase B entry point for phone-side home-zone
+          // setup. Replaces the Phase A throwaway WifiProbeScreen tile.
+          // Only shows when a device is paired (without one, no IMEI to
+          // configure). See plans/2026-05-11-phone-side-home-zone.md.
           // -----------------------------------------------------------------
-          _section('Dispositivo'),
-          ListTile(
-            leading: const Icon(Icons.wifi_find_outlined),
-            title: const Text('Probar WiFi + GPS'),
-            subtitle: const Text(
-              'Diagnóstico previo a configurar zona de casa',
-              style: TextStyle(fontSize: 12),
+          if (device != null) ...[
+            _section('Dispositivo'),
+            ListTile(
+              leading: const Icon(Icons.home_work_outlined),
+              title: const Text('Configurar zona de casa'),
+              subtitle: const Text(
+                'Detectar tu Wi-Fi de casa para ahorrar batería',
+                style: TextStyle(fontSize: 12),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => HomeZoneSetupScreen(
+                    device: device!,
+                    // Settings entry doesn't know the pet name with
+                    // certainty; pass the device name as a placeholder.
+                    // Onboarding entry will pass the real pet name.
+                    petName: device!.name,
+                  ),
+                ),
+              ),
             ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const WifiProbeScreen()),
-            ),
-          ),
+          ],
           const SizedBox(height: PettiSpacing.s7),
         ],
       ),

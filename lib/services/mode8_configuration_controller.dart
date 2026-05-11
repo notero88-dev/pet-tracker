@@ -64,6 +64,17 @@ class Mode8ConfigurationController {
   final LatLng homeCenter;
   final int radiusMeters;
 
+  /// Phone-side home-zone (Phase B, 2026-05-11). When [homeBssid] is set,
+  /// the backend skips the on-device WiFi SCAN and programs the MT710's
+  /// AP slot with this BSSID directly. [homeSsid] is stored on the
+  /// intent for display purposes (settings "Casa configurada: ...").
+  ///
+  /// Both fields are optional for back-compat with the legacy A-flow
+  /// that still uses device-side SCAN. New onboarding + the Settings
+  /// "Configurar zona de casa" path always supply them.
+  final String? homeBssid;
+  final String? homeSsid;
+
   /// Optional ProvisioningApi injection for tests.
   final ProvisioningApi? api;
 
@@ -72,6 +83,8 @@ class Mode8ConfigurationController {
     required this.petName,
     required this.homeCenter,
     required this.radiusMeters,
+    this.homeBssid,
+    this.homeSsid,
     this.api,
   });
 
@@ -113,6 +126,11 @@ class Mode8ConfigurationController {
         homeLng: homeCenter.longitude,
         radiusMeters: radiusMeters,
         petName: petName,
+        // Phase B fields — null on the legacy device-scan path,
+        // non-null when called from the new Settings → Dispositivo
+        // entry or the phone-side onboarding step.
+        homeBssid: homeBssid,
+        homeSsid: homeSsid,
       );
     } on HomeSetupApiException catch (e) {
       _emit(Mode8WizardState.error);

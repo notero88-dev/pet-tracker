@@ -195,10 +195,15 @@ class ProvisioningApi {
 
   // ---------------------------------------------------------------------------
   // Mode 8 onboarding wizard — driving the device through the manual setup
-  // sequence (SCAN → AP → GEO → MODE,8) over TCP. Each call uses
-  // `?via=tcp&queue=true&queueMs=N` so a brief device-offline window is
-  // absorbed transparently rather than failing the wizard. See:
-  //   docs/superpowers/plans/2026-04-29-mode8-flutter-wizard.md
+  // sequence (SCAN → AP → GEO → MODE,8). Originally hardcoded to TCP, but
+  // production default is `DEFAULT_COMMAND_TRANSPORT=sms` because Claro 2G
+  // CGNAT blackholes inbound TCP for our Hologram SIMs in Colombia (see
+  // pettrack-backend/docs/COMMAND-TRANSPORT.md). We now omit `via=` and let
+  // the backend pick — TCP if it ever comes back, SMS today. The app stays
+  // transport-agnostic, which is the whole point of the design.
+  //
+  // We keep `queue=true&queueMs=N` for the TCP path's brief-offline window;
+  // the SMS path ignores those query params (Hologram queues at the carrier).
   // ---------------------------------------------------------------------------
 
   /// Internal helper for the wizard's command endpoints. Sends the request,
@@ -208,17 +213,21 @@ class ProvisioningApi {
     required String imei,
     required String pathSuffix,
     required Map<String, dynamic> body,
-    int queueMs = 60000,
+    int queueMs = 14400000,  // 4h, matches server default (raised 2026-05-06 per Mictrack vendor confirmation)
   }) async {
     final uri = Uri.parse('$baseUrl/devices/$imei/$pathSuffix').replace(
       queryParameters: {
-        'via': 'tcp',
+        // No 'via' — let backend pick based on DEFAULT_COMMAND_TRANSPORT.
         'queue': 'true',
         'queueMs': queueMs.toString(),
       },
     );
     try {
+      // ignore: avoid_print
+      print('[Wizard] POST $uri body=${jsonEncode(body)}');
       final res = await _http.post(uri, headers: _headers, body: jsonEncode(body));
+      // ignore: avoid_print
+      print('[Wizard] <- ${res.statusCode} body=${res.body}');
       Map<String, dynamic> json;
       try {
         json = jsonDecode(res.body) as Map<String, dynamic>;
@@ -265,7 +274,7 @@ class ProvisioningApi {
   /// fall back to placeholder MACs and rely on GPS-only home detection).
   Future<WizardStepResult> scan({
     required String imei,
-    int queueMs = 60000,
+    int queueMs = 14400000,  // 4h, matches server default (raised 2026-05-06 per Mictrack vendor confirmation)
   }) async {
     return _runWizardCommand(
       imei: imei,
@@ -283,7 +292,7 @@ class ProvisioningApi {
     required String mac1,
     required String mac2,
     required String mac3,
-    int queueMs = 60000,
+    int queueMs = 14400000,  // 4h, matches server default (raised 2026-05-06 per Mictrack vendor confirmation)
   }) async {
     return _runWizardCommand(
       imei: imei,
@@ -302,7 +311,7 @@ class ProvisioningApi {
     required double latitude,
     required double longitude,
     required int radiusMeters,
-    int queueMs = 60000,
+    int queueMs = 14400000,  // 4h, matches server default (raised 2026-05-06 per Mictrack vendor confirmation)
   }) async {
     return _runWizardCommand(
       imei: imei,
@@ -322,7 +331,7 @@ class ProvisioningApi {
   Future<WizardStepResult> setModeHome({
     required String imei,
     required int intervalSeconds,
-    int queueMs = 60000,
+    int queueMs = 14400000,  // 4h, matches server default (raised 2026-05-06 per Mictrack vendor confirmation)
   }) async {
     if (intervalSeconds < 10 || intervalSeconds > 60) {
       throw ArgumentError(
@@ -348,7 +357,7 @@ class ProvisioningApi {
   Future<WizardStepResult> setModeRealtime({
     required String imei,
     int intervalSeconds = 30,
-    int queueMs = 60000,
+    int queueMs = 14400000,  // 4h, matches server default (raised 2026-05-06 per Mictrack vendor confirmation)
   }) async {
     if (intervalSeconds < 10 || intervalSeconds > 600) {
       throw ArgumentError(
@@ -385,17 +394,26 @@ class ProvisioningApi {
     required double homeLng,
     required int radiusMeters,
     required String petName,
+    // Phase B (2026-05-11): optional phone-side fields. When the app
+    // supplies homeBssid, the runner skips the on-device SCAN and uses
+    // this BSSID for the AP slot directly. Both must be supplied
+    // together (or both omitted) — the backend validates this.
+    String? homeBssid,
+    String? homeSsid,
   }) async {
+    final body = <String, dynamic>{
+      'intentId': intentId,
+      'homeLat': homeLat,
+      'homeLng': homeLng,
+      'radiusMeters': radiusMeters,
+      'petName': petName,
+    };
+    if (homeBssid != null) body['homeBssid'] = homeBssid;
+    if (homeSsid != null) body['homeSsid'] = homeSsid;
     final res = await _http.post(
       Uri.parse('$baseUrl/devices/$imei/home-setup'),
       headers: _headers,
-      body: jsonEncode({
-        'intentId': intentId,
-        'homeLat': homeLat,
-        'homeLng': homeLng,
-        'radiusMeters': radiusMeters,
-        'petName': petName,
-      }),
+      body: jsonEncode(body),
     );
     final json = _decodeOrThrow(res, op: 'postHomeSetup');
     return HomeSetupIntent.fromJson(json['intent'] as Map<String, dynamic>);
@@ -481,6 +499,15 @@ class HomeSetupIntent {
   final int attempts;
   final String? lastError;
   final String? supersededBy;
+  // Phase B (2026-05-11): phone-side home-zone fields. setupMethod is
+  // 'phone_scan' for new intents that captured BSSID on the phone,
+  // 'device_scan' for legacy ones that ran SCAN on the MT710.
+  // homeSsid is what the settings screen shows ("Casa configurada:
+  // Corporativo Habi") and homeBssid is what was actually programmed
+  // into the device's AP slot.
+  final String? homeBssid;
+  final String? homeSsid;
+  final String setupMethod;
   final DateTime requestedAt;
   final DateTime updatedAt;
   final int elapsedSeconds;
@@ -499,6 +526,9 @@ class HomeSetupIntent {
     required this.attempts,
     required this.lastError,
     required this.supersededBy,
+    this.homeBssid,
+    this.homeSsid,
+    this.setupMethod = 'device_scan',
     required this.requestedAt,
     required this.updatedAt,
     required this.elapsedSeconds,
@@ -526,6 +556,10 @@ class HomeSetupIntent {
       attempts: (j['attempts'] as num?)?.toInt() ?? 0,
       lastError: j['lastError'] as String?,
       supersededBy: j['supersededBy'] as String?,
+      // Phase B fields — older intents won't have them, so default safely.
+      homeBssid: j['homeBssid'] as String?,
+      homeSsid: j['homeSsid'] as String?,
+      setupMethod: (j['setupMethod'] as String?) ?? 'device_scan',
       requestedAt: DateTime.parse(j['requestedAt'] as String),
       updatedAt: DateTime.parse(j['updatedAt'] as String),
       elapsedSeconds: (j['elapsedSeconds'] as num?)?.toInt() ?? 0,
