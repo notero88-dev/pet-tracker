@@ -434,6 +434,23 @@ class ProvisioningApi {
     return HomeSetupIntent.fromJson(json['intent'] as Map<String, dynamic>);
   }
 
+  /// Look up the most-recent intent for an IMEI regardless of status.
+  /// Used by the Settings entry card to decide between the configured
+  /// and unconfigured variants. The caller checks the returned
+  /// `intent.status` to differentiate configured/reconciling/failed.
+  /// Returns null when no intent has ever been created for this IMEI.
+  Future<HomeSetupIntent?> getLatestHomeSetupIntent({
+    required String imei,
+  }) async {
+    final res = await _http.get(
+      Uri.parse('$baseUrl/devices/$imei/home-setup/latest'),
+      headers: _headers,
+    );
+    if (res.statusCode == 404) return null;
+    final json = _decodeOrThrow(res, op: 'getLatestHomeSetupIntent');
+    return HomeSetupIntent.fromJson(json['intent'] as Map<String, dynamic>);
+  }
+
   /// Read the current state of an intent. Returns null on 404 (the intent
   /// row was reaped or the imei/intentId don't match).
   Future<HomeSetupIntent?> getHomeSetupIntent({

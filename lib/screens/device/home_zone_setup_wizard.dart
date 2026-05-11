@@ -1511,7 +1511,11 @@ class _SuccessStep extends StatelessWidget {
           const ZonaCasaSuccessIllustration(),
           const SizedBox(height: 22),
           Text(
-            queuedForWake ? 'Casi listo' : 'Zona de casa activa',
+            // Single H1 regardless of queued vs immediate success — both
+            // mean "the home zone has been saved on our side, and either
+            // is or will be applied on the device." The body copy below
+            // differentiates the two cases.
+            'Zona de casa guardada',
             style: const TextStyle(
               fontFamily: 'Space Grotesk',
               fontSize: 28,

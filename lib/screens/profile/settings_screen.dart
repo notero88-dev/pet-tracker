@@ -17,8 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/device.dart';
 import '../../utils/petti_theme.dart';
-import '../../widgets/petti/zona_casa_entry_card.dart';
-import '../device/home_zone_setup_wizard.dart';
+import '../../widgets/petti/zona_casa_entry_status.dart';
 import 'pet_profile_screen.dart';
 import 'user_profile_screen.dart';
 
@@ -161,16 +160,12 @@ class SettingsScreen extends StatelessWidget {
                 horizontal: PettiSpacing.s4,
                 vertical: PettiSpacing.s2,
               ),
-              child: ZonaCasaEntryCard(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => HomeZoneSetupWizard(
-                      device: device!,
-                      petName: device!.name,
-                    ),
-                  ),
-                ),
+              child: ZonaCasaEntryStatus(
+                device: device!,
+                // Settings entry doesn't know the user's pet name with
+                // certainty; pass the device name as a placeholder. The
+                // wizard's onboarding entry passes the real pet name.
+                petName: device!.name,
               ),
             ),
           ],
