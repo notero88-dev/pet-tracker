@@ -6,11 +6,12 @@ import '../../providers/notification_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/petti_primitives.dart';
-import '../../widgets/petti/home_setup_status_banner.dart';
 import '../onboarding/redesign/onboarding_flow_controller.dart';
 import '../device/device_detail_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../profile/settings_screen.dart';
+import '../activity/pet_activity_screen.dart';
+import '../../services/real_activity_builder.dart';
 
 /// Home — the main daily-use screen.
 ///
@@ -68,8 +69,32 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: PettiColors.cloud,
       appBar: AppBar(
-        title: Text('Petti', style: PettiText.h2()),
+        title: Text('Besti', style: PettiText.h2()),
         actions: [
+          // Activity dashboard — Garmin-flavored daily stats. Live load:
+          // the screen shows a loading skeleton, then renders metrics
+          // computed from Traccar position history. Falls back to demo
+          // data with a banner if the load fails.
+          IconButton(
+            icon: const Icon(Icons.monitor_heart_outlined),
+            tooltip: 'Actividad',
+            onPressed: () {
+              final traccar =
+                  Provider.of<TraccarProvider>(context, listen: false);
+              final firestore = FirestoreService();
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PetActivityScreen.live(
+                    loader: () => realActivitiesForUser(
+                      traccar: traccar,
+                      firestore: firestore,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
           // Bell icon with optional unread badge.
           Consumer<NotificationProvider>(
             builder: (context, n, _) {
@@ -201,7 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: PettiSpacing.s5),
 
             Text(
-              '¡Bienvenido a Petti!',
+              '¡Bienvenido a Besti!',
               style: PettiText.h1(),
               textAlign: TextAlign.center,
             ),
@@ -258,14 +283,18 @@ class _HomeScreenState extends State<HomeScreen> {
           PettiSpacing.s8,
         ),
         children: [
-          // Home-setup status banner (Phase 1.1). Renders one banner per
-          // device that has an active intent on the server. Self-polls;
-          // collapses to zero height when no intent is in flight. Lives
-          // ABOVE the section header so the user sees "we're configuring
-          // Petti" before the device list itself.
-          for (final device in traccar.devices)
-            if (device.uniqueId.isNotEmpty)
-              HomeSetupStatusBanner(imei: device.uniqueId),
+          // Home-setup status banner — removed from home screen 2026-05-11
+          // (Phase B v2 of plans/2026-05-11-phone-side-home-zone.md). The
+          // banner was duplicating + contradicting the wizard's own
+          // "Zona de casa guardada · se aplicará cuando se mueva" success
+          // screen and the Settings entry card's configured variant.
+          // Because the gateway now queues commands for up to 4h waiting
+          // on the (offline) device, intents stay in 'reconciling' for
+          // hours — the banner would stick around showing "Configurando..."
+          // long after the user thought they were done.
+          //
+          // The widget file is left on disk in case we want a slimmer,
+          // copy-corrected version later, but it's no longer wired here.
           // Section header — quiet "Tus mascotas" eyebrow above the cards.
           Padding(
             padding: const EdgeInsets.only(
@@ -313,7 +342,27 @@ class _PetCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final position = traccar.getLastPosition(device.traccarId!);
     final bool isOnline = device.isOnline;
+    final DateTime? lastUpdate = device.lastUpdate as DateTime?;
     final int? battery = position?.batteryLevel;
+
+    // Status pill copy mirrors Traccar's "Activo hace 2 horas" pattern:
+    // green "En línea" when fresh (<30 min), muted "Activo hace X" when we
+    // have a known-but-stale lastUpdate, and a true "Sin señal" only when
+    // the device has never reported. Distinguishing stale vs. never-seen
+    // matters because the device commonly goes quiet on Mode 8 stationary
+    // — that's not a signal failure, it's expected reporting behavior.
+    final PettiStatus statusKind;
+    final String statusLabel;
+    if (isOnline) {
+      statusKind = PettiStatus.online;
+      statusLabel = 'En línea';
+    } else if (lastUpdate != null) {
+      statusKind = PettiStatus.warning;
+      statusLabel = 'Activo ${_relativeTimeEs(lastUpdate)}';
+    } else {
+      statusKind = PettiStatus.offline;
+      statusLabel = 'Sin señal';
+    }
 
     // Bucket battery to nearest 20% for the Petti badge (which expects
     // 20/40/60/80/100 to keep visual states from being too noisy).
@@ -374,10 +423,8 @@ class _PetCard extends StatelessWidget {
                       Row(
                         children: [
                           PettiStatusPill(
-                            kind: isOnline
-                                ? PettiStatus.online
-                                : PettiStatus.offline,
-                            label: isOnline ? 'En línea' : 'Sin señal',
+                            kind: statusKind,
+                            label: statusLabel,
                           ),
                           if (bucket != null) ...[
                             const SizedBox(width: PettiSpacing.s2),
@@ -398,5 +445,26 @@ class _PetCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Spanish relative-time formatter, mirrors Traccar's "hace 2 horas".
+  /// Kept inline here (rather than shared) because the same formatter
+  /// already lives in device_settings_screen.dart with the exact same
+  /// breakpoints; the duplication is intentional until a third caller
+  /// shows up and motivates lifting it into utils/.
+  String _relativeTimeEs(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inSeconds < 30) return 'hace unos segundos';
+    if (diff.inMinutes < 1) return 'hace ${diff.inSeconds} s';
+    if (diff.inMinutes < 60) {
+      final m = diff.inMinutes;
+      return 'hace $m ${m == 1 ? 'minuto' : 'minutos'}';
+    }
+    if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return 'hace $h ${h == 1 ? 'hora' : 'horas'}';
+    }
+    final d = diff.inDays;
+    return 'hace $d ${d == 1 ? 'día' : 'días'}';
   }
 }
