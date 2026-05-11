@@ -29,25 +29,40 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  /// Map of traccarDeviceId → Firestore pet doc, populated on init.
+  /// The pet cards use this to override the Traccar device name (which
+  /// is typically "TEST_1's Tracker") with the actual pet name the user
+  /// set during onboarding ("test_1", "Canela", etc).
+  Map<int, Map<String, dynamic>> _petsByDeviceId = const {};
+
   @override
   void initState() {
     super.initState();
     _initializeTraccar();
-    _dedupePets();
+    _bootstrapPets();
   }
 
-  /// One-shot cleanup on every launch. Deletes duplicate Firestore pet
-  /// docs that point to the same traccarDeviceId, keeping the most-recent
-  /// one. Idempotent — no-op when there are no duplicates. See
-  /// FirestoreService.dedupePetsByDevice for the why.
-  Future<void> _dedupePets() async {
+  /// One-shot launch sequence: dedup duplicate pet docs, then load the
+  /// (de-duped) pets into _petsByDeviceId so the cards can render
+  /// pet-centric copy instead of device-centric.
+  Future<void> _bootstrapPets() async {
     try {
-      final n = await FirestoreService().dedupePetsByDevice();
-      if (n > 0) {
-        debugPrint('[home_screen] dedupePetsByDevice: removed $n duplicate(s)');
+      final firestore = FirestoreService();
+      final removed = await firestore.dedupePetsByDevice();
+      if (removed > 0) {
+        debugPrint(
+            '[home_screen] dedupePetsByDevice: removed $removed duplicate(s)');
       }
+      final pets = await firestore.getUserPets();
+      final byDevice = <int, Map<String, dynamic>>{};
+      for (final pet in pets) {
+        final id = pet['traccarDeviceId'];
+        if (id is int) byDevice[id] = pet;
+      }
+      if (!mounted) return;
+      setState(() => _petsByDeviceId = byDevice);
     } catch (e) {
-      debugPrint('[home_screen] dedupePetsByDevice failed: $e');
+      debugPrint('[home_screen] _bootstrapPets failed: $e');
     }
   }
 
@@ -316,7 +331,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           ...traccar.devices.map(
-              (device) => _PetCard(device: device, traccar: traccar)),
+              (device) => _PetCard(
+                    device: device,
+                    traccar: traccar,
+                    pet: _petsByDeviceId[device.traccarId],
+                  )),
           const SizedBox(height: PettiSpacing.s4),
           _VerActividadCta(),
           // Tail spacer so the FAB never overlaps the dark CTA.
@@ -356,7 +375,17 @@ class _PetCard extends StatefulWidget {
   final dynamic device; // Device — keeping dynamic to avoid coupling to model
   final TraccarProvider traccar;
 
-  const _PetCard({required this.device, required this.traccar});
+  /// Matching Firestore pet doc for this device, or null if none was
+  /// found (orphan device, or pets haven't loaded yet). When present,
+  /// the card uses `pet['name']` and `pet['avatarPalette']` to render
+  /// pet-centric copy rather than device-centric.
+  final Map<String, dynamic>? pet;
+
+  const _PetCard({
+    required this.device,
+    required this.traccar,
+    this.pet,
+  });
 
   @override
   State<_PetCard> createState() => _PetCardState();
@@ -401,9 +430,21 @@ class _PetCardState extends State<_PetCard> {
   Widget build(BuildContext context) {
     final device = widget.device;
     final traccar = widget.traccar;
+    final pet = widget.pet;
     final position = traccar.getLastPosition(device.traccarId!);
     final bool isOnline = device.isOnline;
     final DateTime? lastUpdate = device.lastUpdate as DateTime?;
+    final int? battery = position?.batteryLevel;
+
+    // Pet-centric display name. The Firestore pet doc owns the user's
+    // chosen name; the Traccar device.name is auto-generated and
+    // typically reads "TEST_1's Tracker", which doesn't match what the
+    // user sees in the activity screen. Fall back to device.name when
+    // we couldn't link a pet (race / orphan).
+    final displayName = (pet?['name'] is String &&
+            (pet!['name'] as String).trim().isNotEmpty)
+        ? pet['name'] as String
+        : device.name as String;
 
     final lastSyncText = isOnline
         ? 'En línea'
@@ -425,26 +466,26 @@ class _PetCardState extends State<_PetCard> {
       }
     }
 
-    final String subtitle;
-    final IconData subtitleIcon;
-    final Color subtitleIconColor;
-    if (isOnline && locationLabel != null) {
-      subtitle = '$locationLabel · $lastSyncText';
-      subtitleIcon = Icons.place;
-      subtitleIconColor = PettiColors.marigoldDim;
-    } else if (locationLabel != null) {
-      // Offline but we have a last-known place.
-      subtitle = '$locationLabel · $lastSyncText';
-      subtitleIcon = Icons.wifi_off_rounded;
-      subtitleIconColor = PettiColors.trail;
-    } else {
-      subtitle = 'Sin conexión · $lastSyncText';
-      subtitleIcon = Icons.wifi_off_rounded;
-      subtitleIconColor = PettiColors.trail;
-    }
+    // Compose the subtitle as: place · battery% · lastSync.
+    // Battery is omitted when null (no position yet). The order is
+    // intentional — battery sits next to location because they're both
+    // "current state of the device" facts; lastSync is when we knew.
+    final parts = <String>[
+      if (locationLabel != null) locationLabel,
+      if (battery != null) '$battery%',
+      lastSyncText,
+    ];
+    final hasLocation = locationLabel != null;
+    final subtitle = hasLocation
+        ? parts.join(' · ')
+        : 'Sin conexión · $lastSyncText';
+    final IconData subtitleIcon =
+        isOnline ? Icons.place : Icons.wifi_off_rounded;
+    final Color subtitleIconColor =
+        isOnline ? PettiColors.marigoldDim : PettiColors.trail;
 
-    final initial = (device.name as String).isNotEmpty
-        ? (device.name as String).substring(0, 1).toUpperCase()
+    final initial = displayName.isNotEmpty
+        ? displayName.substring(0, 1).toUpperCase()
         : '?';
 
     return Padding(
@@ -472,7 +513,7 @@ class _PetCardState extends State<_PetCard> {
             child: Row(
               children: [
                 _PetCircleAvatar(
-                  name: device.name as String,
+                  name: displayName,
                   initial: initial,
                   isOnline: isOnline,
                 ),
@@ -482,7 +523,7 @@ class _PetCardState extends State<_PetCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        device.name as String,
+                        displayName,
                         style: const TextStyle(
                           fontFamily: 'Space Grotesk',
                           fontSize: 17,
