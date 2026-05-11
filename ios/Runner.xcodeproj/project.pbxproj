@@ -198,7 +198,6 @@
 				97C146EA1CF9000F007C117D /* Sources */,
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
-				AA0000000000000000000001 /* Strip xattrs */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				7FF55314EB51FE3C5CFA5D2F /* [CP] Embed Pods Frameworks */,
@@ -359,22 +358,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Strip macOS Sequoia com.apple.provenance xattrs that break codesign.\n# Must run BEFORE Flutter's internal install_code_assets step which codesigns build/native_assets.\nxattr -cr \"$FLUTTER_ROOT/bin/cache\" 2>/dev/null || true\nxattr -cr \"$HOME/.pub-cache\" 2>/dev/null || true\nxattr -cr \"${SRCROOT}/../build\" 2>/dev/null || true\nxattr -cr \"${SRCROOT}/Pods\" 2>/dev/null || true\n/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build\nFLUTTER_BUILD_RC=$?\n# Strip xattrs AGAIN after the build — frameworks Flutter just built get re-tagged by macOS Sequoia.\nxattr -cr \"${SRCROOT}/../build\" 2>/dev/null || true\nexit $FLUTTER_BUILD_RC";
-		};
-		AA0000000000000000000001 /* Strip xattrs */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Strip xattrs";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Strip macOS Sequoia com.apple.provenance xattrs before Embed Frameworks phase,\n# which codesigns each framework as it copies them. macOS Sequoia re-tags files after\n# Flutter builds them, so we strip AGAIN here right before Xcode signs them.\nxattr -cr \"${SRCROOT}/../build\" 2>/dev/null || true\nxattr -cr \"${SRCROOT}/Pods\" 2>/dev/null || true\nxattr -cr \"${BUILT_PRODUCTS_DIR}\" 2>/dev/null || true\nxattr -cr \"${TARGET_BUILD_DIR}\" 2>/dev/null || true\nxattr -cr \"${CONFIGURATION_BUILD_DIR}\" 2>/dev/null || true\ntrue";
+			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build\n";
 		};
 		EBA7DF45FA17AD6CCCAE8174 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -516,6 +500,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = co.pettrack.pettrackApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -703,6 +688,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = co.pettrack.pettrackApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
@@ -727,6 +713,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = co.pettrack.pettrackApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";

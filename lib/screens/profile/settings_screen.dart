@@ -17,6 +17,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/device.dart';
 import '../../utils/petti_theme.dart';
+import '../debug/wifi_probe_screen.dart';
 import 'pet_profile_screen.dart';
 import 'user_profile_screen.dart';
 
@@ -94,25 +95,6 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.straighten_outlined),
-            title: const Text('Unidades'),
-            subtitle: const Text('Kilómetros, metros'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showUnitsDialog(context),
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.dark_mode_outlined),
-            title: const Text('Modo oscuro'),
-            subtitle: const Text('Tema oscuro para la aplicación'),
-            value: false,
-            onChanged: (_) => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Modo oscuro disponible próximamente'),
-              ),
-            ),
-          ),
-
           _section('Soporte'),
           ListTile(
             leading: const Icon(Icons.help_outline),
@@ -159,13 +141,30 @@ class SettingsScreen extends StatelessWidget {
             trailing: const Icon(Icons.open_in_new),
             onTap: () => _openUrl('https://pettrack.co/terms'),
           ),
+          // -----------------------------------------------------------------
+          // Diagnostic tile for Plan #2 Phase A: WiFi + GPS probe.
+          // Verifies the HotspotConfiguration entitlement + location auth
+          // give us real SSID/BSSID/GPS values on a physical iPhone before
+          // we wire phone-side home-zone setup into the real flow (Phase B).
+          // Visible in ALL builds during dev so testing on the prod
+          // build doesn't require swapping channels. Replaced by the
+          // real "Configurar zona de casa" entry in Phase B.
+          // See plans/2026-05-11-phone-side-home-zone.md.
+          // -----------------------------------------------------------------
+          _section('Dispositivo'),
           ListTile(
-            leading: const Icon(Icons.code),
-            title: const Text('Licencias de código abierto'),
+            leading: const Icon(Icons.wifi_find_outlined),
+            title: const Text('Probar WiFi + GPS'),
+            subtitle: const Text(
+              'Diagnóstico previo a configurar zona de casa',
+              style: TextStyle(fontSize: 12),
+            ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => _showLicenses(context),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const WifiProbeScreen()),
+            ),
           ),
-
           const SizedBox(height: PettiSpacing.s7),
         ],
       ),
@@ -282,44 +281,6 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  void _showUnitsDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Unidades de medida'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<String>(
-              title: const Text('Métrico (km, m)'),
-              value: 'metric',
-              groupValue: 'metric',
-              activeColor: PettiColors.marigold,
-              onChanged: (_) {},
-            ),
-            RadioListTile<String>(
-              title: const Text('Imperial (mi, ft)'),
-              value: 'imperial',
-              groupValue: 'metric',
-              activeColor: PettiColors.marigold,
-              onChanged: (_) => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Solo sistema métrico disponible'),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showHelp(BuildContext context) {
     Navigator.push(
       context,
@@ -427,15 +388,6 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-
-  void _showLicenses(BuildContext context) {
-    showLicensePage(
-      context: context,
-      applicationName: 'Petti',
-      applicationVersion: '1.0.0',
-      applicationLegalese: '© 2026 PetTrack Colombia',
     );
   }
 

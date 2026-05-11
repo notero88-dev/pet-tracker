@@ -16,11 +16,40 @@ dependencies:
   firebase_storage: ^12.3.8
   firebase_messaging: ^15.1.7
   cloud_firestore: ^5.6.0
+
+  # OAuth — Sign in with Google + Apple. Both required if any third-party
+  # SSO is offered on iOS (App Store rule 4.8). Apple uses the native iOS
+  # ASAuthorizationController on iOS; the package falls back to a web
+  # flow on Android (requires the Apple Service ID + return URL set up
+  # in Apple Developer + Firebase Console — see runbook).
+  #
+  # Pinned to 6.1.x — newer 6.2.x pulls iOS GoogleSignIn 8.x which
+  # transitively wants GTMSessionFetcher 3.x, but Firebase 11.x locks
+  # GTMSessionFetcher 4.x → CocoaPods refuses to install. Bump back to
+  # ^6.2.x once Firebase updates its bundled SDK to a compatible release.
+  google_sign_in: ^6.1.6
+  sign_in_with_apple: ^6.1.0
+  # crypto needed for the SHA-256 nonce hash that Apple Sign-In requires
+  # to bind the OAuth response to this specific sign-in attempt — see
+  # auth_provider.signInWithApple().
+  crypto: ^3.0.5
   
   # Google Maps
   google_maps_flutter: ^2.10.0
   location: ^7.0.0
   geocoding: ^3.0.0
+
+  # WiFi info — used by the phone-side home-zone setup flow to read
+  # the currently-connected SSID + BSSID and send them to the backend
+  # instead of asking the MT710 to scan (which fails indoors with
+  # marginal coverage). See docs/plans/2026-05-11-phone-side-home-zone.md.
+  #
+  # iOS: requires `com.apple.developer.networking.HotspotConfiguration`
+  # entitlement (set in Runner.entitlements) PLUS location auth (the
+  # BSSID is gated behind location for privacy, even with the
+  # entitlement). iOS 12+ does not allow scanning nearby networks;
+  # only the connected one. Sufficient for our use case.
+  network_info_plus: ^6.0.0
   
   # State Management
   provider: ^6.1.2
@@ -54,19 +83,21 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
   # Generates Android (legacy + adaptive) and iOS launcher icons from
-  # assets/icons/petti_icon*.png. Source PNGs are produced by
-  # assets/icons/generate_petti_icon.py — see header for rationale.
+  # assets/icons/besti_icon*.png. Source PNGs are produced by
+  # assets/icons/generate_besti_icon.py — see header for rationale.
   # Re-run with: dart run flutter_launcher_icons
   flutter_launcher_icons: ^0.14.2
 
 flutter_launcher_icons:
   android: "ic_launcher"  # writes to android/app/src/main/res/mipmap-*/
   ios: true               # writes to ios/Runner/Assets.xcassets/AppIcon.appiconset/
-  image_path: "assets/icons/petti_icon.png"
+  image_path: "assets/icons/besti_icon.png"
   remove_alpha_ios: true  # iOS rejects alpha channels in app icons
-  # Adaptive (Android 8+) — foreground floats over solid Marigold background.
-  adaptive_icon_background: "#E8A33D"
-  adaptive_icon_foreground: "assets/icons/petti_icon_foreground.png"
+  # Adaptive (Android 8+) — orange paw foreground over cream background,
+  # matching the iOS icon (cream + orange paw). Switched from Marigold
+  # bg to Cream as part of the Petti → Besti rebrand 2026-05-06.
+  adaptive_icon_background: "#FAF7F2"
+  adaptive_icon_foreground: "assets/icons/besti_icon_foreground.png"
 
 flutter:
   uses-material-design: true

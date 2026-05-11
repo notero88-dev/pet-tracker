@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Petti</string>
+	<string>Besti</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -72,8 +72,15 @@
 	     first location request if this string is absent. Shown in the
 	     OS-level permission dialog the first time A6 Pick Location
 	     resolves the phone's GPS as the initial map center. -->
+	<!-- iOS uses this string for TWO things, both rendered in the same
+	     system prompt when we call requestPermission():
+	       1. Centering the map when configuring zona segura.
+	       2. Reading the home WiFi BSSID during onboarding
+	          (com.apple.developer.networking.HotspotConfiguration —
+	          iOS gates BSSID behind location auth, not just the
+	          entitlement; see 2026-05-11 phone-side home zone plan). -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Petti usa tu ubicación para centrar el mapa cuando configuras la zona segura de tu mascota.</string>
+	<string>Petti usa tu ubicación para centrar el mapa y detectar tu red Wi-Fi de casa al configurar la zona de tu mascota.</string>
 
 	<!-- Required by `mobile_scanner` for QR-code scanning during A4
 	     onboarding. Without this, mobile_scanner throws and the camera
@@ -125,5 +132,25 @@
 			</dict>
 		</dict>
 	</dict>
+
+	<!-- ─── Google Sign-In OAuth callback URL scheme ─────────────── -->
+	<!-- Required by the `google_sign_in` iOS plugin. The string below is
+	     the REVERSED_CLIENT_ID from GoogleService-Info.plist. After the
+	     user authorizes Google in the in-app Safari view, Google redirects
+	     to this scheme so iOS can route the OAuth response back into the
+	     app. If you regenerate the Firebase iOS app config, update this
+	     scheme to match the new REVERSED_CLIENT_ID — otherwise sign-in
+	     hangs forever after Google's auth screen. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.487348630652-0am4lmo6ij7kn915h61pr66tk98pthdr</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

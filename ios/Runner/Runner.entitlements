@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		Sign in with Apple capability. Required for the
+		`sign_in_with_apple` Flutter package (and for App Store
+		Review rule 4.8 — if we offer Google or any other third-
+		party SSO, we MUST also offer Sign In with Apple on iOS).
+
+		The matching capability must be enabled on the Apple
+		Developer App ID `co.pettrack.pettrackApp` (Identifiers →
+		App ID → Edit → Sign In with Apple). If this entitlement
+		is here but the App ID doesn't have the capability, signing
+		fails with "An error occurred while signing in with Apple
+		(authorization code couldn't be retrieved)".
+	-->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+	<!--
+		Access WiFi Information capability.
+
+		THIS is the right entitlement for reading the
+		currently-connected WiFi's SSID + BSSID via
+		`CNCopyCurrentNetworkInfo` (what network_info_plus calls
+		under the hood). Easy to confuse with HotspotConfiguration
+		below; the rule is:
+
+		- wifi-info → READ current network info
+		- HotspotConfiguration → ADD a network to known networks
+
+		2026-05-11: initial pass only added HotspotConfiguration,
+		which signed fine but returned null for SSID + BSSID at
+		runtime. The fix was adding this entitlement here.
+
+		Used by the phone-side home-zone setup flow
+		(docs/plans/2026-05-11-phone-side-home-zone.md): during
+		onboarding the app reads the user's home BSSID + phone GPS
+		and sends them to the backend instead of asking the MT710
+		to scan from indoors (where its scan fails — 3+ failures
+		in device_desired_state for the test IMEI).
+
+		iOS gates this read behind THREE conditions:
+		  1. This entitlement.
+		  2. NSLocationWhenInUseUsageDescription granted AND
+		     "Precise Location" toggle ON.
+		  3. App in foreground when reading.
+
+		If this entitlement is here but the App ID doesn't have
+		the matching capability enabled (Apple Developer Portal →
+		Identifiers → App ID → Edit → Access WiFi Information),
+		signing fails. Automatic signing usually handles this if
+		you're logged into Xcode with the right team.
+	-->
+	<key>com.apple.developer.networking.wifi-info</key>
+	<true/>
+
+	<!--
+		Hotspot Configuration capability — kept around because
+		the v1.5 home-setup flow may want to *offer* to add the
+		user's home network as a known network on their phone
+		(quality-of-life: app reads BSSID for the home zone AND
+		registers the network so iOS rejoins it automatically).
+		Not strictly required for Phase A/B of the phone-side
+		home-zone plan. Remove if it complicates signing.
+	-->
+	<key>com.apple.developer.networking.HotspotConfiguration</key>
+	<true/>
+</dict>
+</plist>
