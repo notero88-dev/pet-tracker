@@ -106,6 +106,7 @@ class _HomeZoneSetupWizardState extends State<HomeZoneSetupWizard> {
   _Capture? _capture;
   String? _errorMessage;
   bool _submittingMode8 = false;
+  bool _queuedForWake = false;
 
   // Fixed radius (design dropped the slider, recommendation: 70m default).
   static const int _radiusMeters = 70;
@@ -211,6 +212,7 @@ class _HomeZoneSetupWizardState extends State<HomeZoneSetupWizard> {
           batteryEstimate: '~14 días',
           onDone: _onExit,
           isOnboarding: widget.isOnboarding,
+          queuedForWake: _queuedForWake,
         );
       case _Step.denied:
         return _DeniedStep(
@@ -277,7 +279,13 @@ class _HomeZoneSetupWizardState extends State<HomeZoneSetupWizard> {
     try {
       final outcome = await controller.run(context);
       if (!mounted) return;
-      if (outcome is Mode8WizardSuccess || outcome is Mode8WizardQueued) {
+      if (outcome is Mode8WizardSuccess) {
+        _queuedForWake = false;
+        _goto(_Step.success);
+      } else if (outcome is Mode8WizardQueued) {
+        // Device offline / asleep — runner queued the commands.
+        // Success screen shows a slightly different message.
+        _queuedForWake = true;
         _goto(_Step.success);
       } else if (outcome is Mode8WizardError) {
         setState(() {
@@ -1478,12 +1486,19 @@ class _SuccessStep extends StatelessWidget {
   final VoidCallback onDone;
   final bool isOnboarding;
 
+  /// True when the gateway queued the commands because the device was
+  /// offline. The config will apply once the tracker next reconnects;
+  /// the success screen shows that explicitly instead of pretending
+  /// the device is already configured.
+  final bool queuedForWake;
+
   const _SuccessStep({
     required this.ssid,
     required this.address,
     required this.batteryEstimate,
     required this.onDone,
     required this.isOnboarding,
+    this.queuedForWake = false,
   });
 
   @override
@@ -1495,9 +1510,9 @@ class _SuccessStep extends StatelessWidget {
         children: [
           const ZonaCasaSuccessIllustration(),
           const SizedBox(height: 22),
-          const Text(
-            'Zona de casa activa',
-            style: TextStyle(
+          Text(
+            queuedForWake ? 'Casi listo' : 'Zona de casa activa',
+            style: const TextStyle(
               fontFamily: 'Space Grotesk',
               fontSize: 28,
               fontWeight: FontWeight.w700,
@@ -1507,10 +1522,13 @@ class _SuccessStep extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'Tu mascota puede descansar en casa. El tracker se despertará en '
-            'cuanto cruce la puerta.',
-            style: TextStyle(
+          Text(
+            queuedForWake
+                ? 'Guardamos tu zona de casa. Se aplicará la próxima vez '
+                      'que tu mascota se mueva y el tracker despierte.'
+                : 'Tu mascota puede descansar en casa. El tracker se '
+                      'despertará en cuanto cruce la puerta.',
+            style: const TextStyle(
               fontFamily: 'Inter',
               fontSize: 14,
               color: PettiColors.fg,

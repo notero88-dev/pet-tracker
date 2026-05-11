@@ -140,9 +140,28 @@ class Mode8ConfigurationController {
       );
     }
 
+    // Client-side polling timeout for the in-flight runner. When the
+    // device is asleep / out of range, the gateway holds each command
+    // in its queue for up to 4h (post-2026-05-11 TTL bump). Each step
+    // of the runner blocks on `await sendGatewayCommand`, so the
+    // intent can stay in 'reconciling' for hours. The wizard can't sit
+    // on a spinner that long — bail out after [pollDeadline] and
+    // return Mode8WizardQueued so the UI shows "se aplicará cuando tu
+    // mascota despierte". The runner keeps going in the background;
+    // a future settings entry refresh will reflect the eventual
+    // configured state.
+    final pollDeadline = DateTime.now().add(const Duration(seconds: 30));
+
     HomeSetupIntent latest = posted;
     while (!latest.isTerminal) {
       if (_cancelled) return const Mode8WizardCancelled();
+      if (DateTime.now().isAfter(pollDeadline)) {
+        // Still 'pending' or 'reconciling' after 30s — runner is
+        // waiting on the device. Return queued so the user gets a
+        // friendly terminal state.
+        _emitForStep(latest.step);
+        return Mode8WizardQueued(stepsCompleted: _stepsCompletedFor(latest));
+      }
       _emitForStep(latest.step);
       await Future.delayed(const Duration(seconds: 3));
       try {
