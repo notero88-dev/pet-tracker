@@ -78,21 +78,38 @@ class FirestoreService {
     return petRef.id;
   }
 
-  /// Get all pets for current user
+  /// Get all pets for current user.
+  ///
+  /// We DON'T order on the Firestore side (`orderBy('createdAt')`) because
+  /// that combined with `where('userId')` requires a composite index —
+  /// see the failed-precondition we hit 2026-05-11 on the activity screen.
+  /// Pets-per-user is small (typically 1–3), so client-side sorting is
+  /// effectively free and removes the index dependency for all users.
   Future<List<Map<String, dynamic>>> getUserPets() async {
     if (_currentUserId == null) return [];
 
     final snapshot = await _db
         .collection('pets')
         .where('userId', isEqualTo: _currentUserId)
-        .orderBy('createdAt', descending: false)
         .get();
 
-    return snapshot.docs.map((doc) {
+    final pets = snapshot.docs.map((doc) {
       final data = doc.data();
       data['id'] = doc.id;
       return data;
     }).toList();
+
+    // Sort ascending by createdAt. Tolerate missing/non-Timestamp values
+    // by treating them as epoch-min so they sort first instead of throwing.
+    pets.sort((a, b) {
+      final aRaw = a['createdAt'];
+      final bRaw = b['createdAt'];
+      final aTime = aRaw is Timestamp ? aRaw.toDate() : DateTime.utc(1970);
+      final bTime = bRaw is Timestamp ? bRaw.toDate() : DateTime.utc(1970);
+      return aTime.compareTo(bTime);
+    });
+
+    return pets;
   }
 
   /// Get pet by ID
