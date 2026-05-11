@@ -17,7 +17,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/device.dart';
 import '../../utils/petti_theme.dart';
-import '../device/home_zone_setup_screen.dart';
+import '../../widgets/petti/zona_casa_entry_card.dart';
+import '../device/home_zone_setup_wizard.dart';
 import 'pet_profile_screen.dart';
 import 'user_profile_screen.dart';
 
@@ -142,30 +143,32 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _openUrl('https://pettrack.co/terms'),
           ),
           // -----------------------------------------------------------------
-          // Dispositivo — Phase B entry point for phone-side home-zone
-          // setup. Replaces the Phase A throwaway WifiProbeScreen tile.
-          // Only shows when a device is paired (without one, no IMEI to
-          // configure). See plans/2026-05-11-phone-side-home-zone.md.
+          // Dispositivo — Modo Zona de casa entry. Replaces the Phase B
+          // ListTile; matches the design bundle's ZonaCasaEntryCard
+          // (hero illustration + CTA when unconfigured; SSID summary
+          // when configured). See docs/plans/2026-05-11-phone-side-home-zone.md.
+          //
+          // The configured/unconfigured switch reads from the most
+          // recent home-setup intent on the backend. Until we wire
+          // that read into a provider here, we default to unconfigured
+          // — the wizard handles the "already configured, re-running"
+          // case gracefully via the supersede logic in homeSetupRepo.
           // -----------------------------------------------------------------
           if (device != null) ...[
-            _section('Dispositivo'),
-            ListTile(
-              leading: const Icon(Icons.home_work_outlined),
-              title: const Text('Configurar zona de casa'),
-              subtitle: const Text(
-                'Detectar tu Wi-Fi de casa para ahorrar batería',
-                style: TextStyle(fontSize: 12),
+            _section('Modo de ahorro'),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: PettiSpacing.s4,
+                vertical: PettiSpacing.s2,
               ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => HomeZoneSetupScreen(
-                    device: device!,
-                    // Settings entry doesn't know the pet name with
-                    // certainty; pass the device name as a placeholder.
-                    // Onboarding entry will pass the real pet name.
-                    petName: device!.name,
+              child: ZonaCasaEntryCard(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => HomeZoneSetupWizard(
+                      device: device!,
+                      petName: device!.name,
+                    ),
                   ),
                 ),
               ),

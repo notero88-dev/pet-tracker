@@ -27,32 +27,27 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:location/location.dart' as loc;
 import 'package:provider/provider.dart';
 
 import '../../../models/device.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../services/provisioning_api.dart';
-import '../../home/home_screen.dart';
 import '../../../utils/petti_theme.dart';
+import '../../device/home_zone_setup_wizard.dart';
 import 'a4_intro_screen.dart';
 import 'a4_manual_imei_screen.dart';
 import 'a4_paired_screen.dart';
 import 'a4_pet_profile_screen.dart';
 import 'a4_qr_scan_screen.dart';
-import 'a6_configuring_screen.dart';
-import 'a6_done_screen.dart';
-import 'a6_pick_location_screen.dart';
-import 'a6_queued_screen.dart';
-import 'a6_set_radius_screen.dart';
 
 /// Default initial map center when phone GPS is unavailable / denied /
 /// timed-out. Bogotá (Plaza de Bolívar).
-const LatLng _kDefaultColombiaCenter = LatLng(4.7110, -74.0721);
+// (Removed _kDefaultColombiaCenter — was the fallback center for the
+// legacy A6 PickLocation when phone GPS timed out. The new
+// HomeZoneSetupWizard handles GPS failure via the Denied step instead.)
 
 /// Phone GPS resolution timeout for setting A6 Pick Location's initial
 /// camera frame.
-const Duration _kPhoneFixTimeout = Duration(seconds: 6);
 
 /// Cross-screen state collected as the user advances through onboarding.
 class OnboardingPayload {
@@ -107,12 +102,9 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
         .pushReplacement(MaterialPageRoute(builder: (_) => screen));
   }
 
-  void _exitToHome() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
-      (_) => false,
-    );
-  }
+  // _exitToHome removed 2026-05-11 — was used by the legacy A6Done/
+  // A6Queued/A6Configuring chain. The new HomeZoneSetupWizard handles
+  // post-success navigation itself via its isOnboarding flag.
 
   // ─── A4 device pairing ─────────────────────────────────────────────
 
@@ -197,10 +189,12 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
       overlay.remove();
       if (!mounted) return;
 
-      // Now resolve phone GPS for A6 Pick Location's initial center.
-      final initial = await _resolvePhoneCenter();
-      if (!mounted) return;
-      _replace(_pickLocation(initial));
+      // Phase B (2026-05-11): replace the A6 pick_location → set_radius
+      // → configuring → done chain with the new HomeZoneSetupWizard.
+      // The wizard internally captures phone GPS + BSSID (the old
+      // _resolvePhoneCenter dance is now inside Step 3), so we don't
+      // pre-resolve a center here.
+      _replace(_zonaCasaWizard());
     } catch (e) {
       overlay.remove();
       if (!mounted) return;
@@ -211,41 +205,13 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
     }
   }
 
-  Future<LatLng> _resolvePhoneCenter() async {
-    final overlay = _showOverlay('Buscando tu ubicación...');
-    try {
-      final fix = await _tryGetPhoneFix().timeout(
-        _kPhoneFixTimeout,
-        onTimeout: () => null,
-      );
-      return fix ?? _kDefaultColombiaCenter;
-    } catch (_) {
-      return _kDefaultColombiaCenter;
-    } finally {
-      overlay.remove();
-    }
-  }
-
-  Future<LatLng?> _tryGetPhoneFix() async {
-    final l = loc.Location();
-    bool serviceOn = await l.serviceEnabled();
-    if (!serviceOn) {
-      serviceOn = await l.requestService();
-      if (!serviceOn) return null;
-    }
-    var perm = await l.hasPermission();
-    if (perm == loc.PermissionStatus.denied) {
-      perm = await l.requestPermission();
-    }
-    if (perm != loc.PermissionStatus.granted &&
-        perm != loc.PermissionStatus.grantedLimited) {
-      return null;
-    }
-    await l.changeSettings(accuracy: loc.LocationAccuracy.balanced);
-    final data = await l.getLocation();
-    if (data.latitude == null || data.longitude == null) return null;
-    return LatLng(data.latitude!, data.longitude!);
-  }
+  // _resolvePhoneCenter + _tryGetPhoneFix removed 2026-05-11 — Step 3
+  // of HomeZoneSetupWizard now handles GPS acquisition internally,
+  // with its own permission flow, address chip, and reverse geocoding.
+  // The associated constants below (kDefaultColombiaCenter,
+  // kPhoneFixTimeout) are no longer referenced; left here as
+  // intentional anchors should any future flow need a Colombia-centered
+  // fallback.
 
   /// Inserts a tiny modal-ish overlay with optional caption. Returns the
   /// entry so the caller can remove it.
@@ -303,66 +269,21 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
     );
   }
 
-  // ─── A6 zona segura wizard ─────────────────────────────────────────
+  // ─── A6 → HomeZoneSetupWizard (Phase B, 2026-05-11) ─────────────────
+  //
+  // The legacy chain (`A6PickLocation → A6SetRadius → A6Configuring →
+  // A6Done` / `A6Queued`) is replaced by the new 5-step
+  // `HomeZoneSetupWizard`. It captures phone GPS + BSSID itself in
+  // Step 3, drives the same Mode8ConfigurationController internally,
+  // and exits to the home screen on success (`isOnboarding: true`).
+  // The legacy screen files (a6_pick_location_screen.dart etc.) are
+  // left on disk for reference but no longer routed.
 
-  Widget _pickLocation(LatLng initial) {
-    return A6PickLocationScreen(
-      initialPosition: initial,
-      onConfirm: (chosen) {
-        _payload.homeCenter = chosen;
-        _replace(_setRadius(chosen));
-      },
-      onBack: () => Navigator.of(context).pop(),
-    );
-  }
-
-  Widget _setRadius(LatLng center) {
-    return A6SetRadiusScreen(
-      homeCenter: center,
-      onConfirm: (radius) {
-        _payload.homeRadiusMeters = radius;
-        _replace(_configuring());
-      },
-      onBack: () => Navigator.of(context).pop(),
-    );
-  }
-
-  Widget _configuring() {
-    return A6ConfiguringScreen(
+  Widget _zonaCasaWizard() {
+    return HomeZoneSetupWizard(
       device: _payload.device!,
       petName: _payload.petName!,
-      homeCenter: _payload.homeCenter!,
-      radiusMeters: _payload.homeRadiusMeters!,
-      onSuccess: (_) => _replace(_done()),
-      onQueued: (stepsCompleted) =>
-          _replace(_queuedScreen(stepsCompleted: stepsCompleted)),
-      onError: (userMessage, detail) {
-        _showError(
-          '$userMessage.\n\nDetalles: $detail',
-          () => _replace(_setRadius(_payload.homeCenter!)),
-        );
-      },
-      onCancelled: _exitToHome,
-    );
-  }
-
-  Widget _done() {
-    final center = _payload.homeCenter!;
-    final radius = _payload.homeRadiusMeters ?? 100;
-    return A6DoneScreen(
-      petName: _payload.petName ?? 'Tu Petti',
-      homeCenter: center,
-      radiusMeters: radius,
-      onSeeMap: _exitToHome,
-      onDefineAnother: () => _replace(_pickLocation(center)),
-    );
-  }
-
-  Widget _queuedScreen({required int stepsCompleted}) {
-    return A6QueuedScreen(
-      stepsCompleted: stepsCompleted,
-      onAcknowledge: _exitToHome,
-      onBack: () => Navigator.of(context).pop(),
+      isOnboarding: true,
     );
   }
 }
