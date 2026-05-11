@@ -12,6 +12,7 @@ import '../profile/settings_screen.dart';
 import '../activity/pet_activity_screen.dart';
 import '../activity/pet_avatar_palette.dart';
 import '../../services/real_activity_builder.dart';
+import '../../services/reverse_geocoder.dart';
 
 /// Home — the main daily-use screen.
 ///
@@ -341,18 +342,65 @@ class _HomeScreenState extends State<HomeScreen> {
 
 /// Single pet/device card — design bundle's `PetCardSummary`.
 ///
-/// Avatar gradient + name + (location · last sync OR "sin conexión" + last
+/// Avatar gradient + name + (place · last sync OR "Sin conexión" + last
 /// sync). Tap → DeviceDetailScreen (which has the map). Removed the
 /// PettiStatusPill + PettiBatteryBadge stack from the old card — battery /
 /// status now surface in the device-detail screen the user lands on.
-class _PetCard extends StatelessWidget {
+///
+/// Stateful because the place-name lookup is async (reverse geocoding
+/// via the geocoding plugin → MapKit on iOS). First paint shows the
+/// raw lat/lng or position.address; once the lookup resolves, the
+/// subtitle swaps to the neighborhood name ("Bella Suiza", "Chapinero",
+/// etc). Cached process-wide so revisits are instant.
+class _PetCard extends StatefulWidget {
   final dynamic device; // Device — keeping dynamic to avoid coupling to model
   final TraccarProvider traccar;
 
   const _PetCard({required this.device, required this.traccar});
 
   @override
+  State<_PetCard> createState() => _PetCardState();
+}
+
+class _PetCardState extends State<_PetCard> {
+  String? _nearestPlace;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveNearestPlace();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PetCard old) {
+    super.didUpdateWidget(old);
+    // Device's last position can shift over time as new Traccar fixes
+    // arrive; re-resolve if the coords moved enough to matter.
+    final oldPos = old.traccar.getLastPosition(old.device.traccarId!);
+    final newPos = widget.traccar.getLastPosition(widget.device.traccarId!);
+    if (oldPos?.latitude != newPos?.latitude ||
+        oldPos?.longitude != newPos?.longitude) {
+      _resolveNearestPlace();
+    }
+  }
+
+  Future<void> _resolveNearestPlace() async {
+    final position = widget.traccar.getLastPosition(widget.device.traccarId!);
+    if (position == null) return;
+    final name = await ReverseGeocoder.instance.nearestPlace(
+      position.latitude,
+      position.longitude,
+    );
+    if (!mounted) return;
+    if (name != _nearestPlace) {
+      setState(() => _nearestPlace = name);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final device = widget.device;
+    final traccar = widget.traccar;
     final position = traccar.getLastPosition(device.traccarId!);
     final bool isOnline = device.isOnline;
     final DateTime? lastUpdate = device.lastUpdate as DateTime?;
@@ -363,25 +411,30 @@ class _PetCard extends StatelessWidget {
             ? _relativeTimeEs(lastUpdate)
             : 'sin señal');
 
-    // Location subtitle:
-    //   online + position → "<address or coords> · <relative time>"
-    //   offline           → "Sin conexión · <last seen>"
+    // Best location label for the subtitle, in order of preference:
+    //   1. Reverse-geocoded neighborhood ("Bella Suiza")
+    //   2. position.address from Traccar's own geocoding pass
+    //   3. raw coordinates as a last resort (only briefly, while the
+    //      reverse-geocode is still in flight)
+    String? locationLabel = _nearestPlace;
+    if (locationLabel == null || locationLabel.isEmpty) {
+      if (position?.address?.isNotEmpty == true) {
+        locationLabel = position!.address;
+      } else if (position != null) {
+        locationLabel = position.coordinatesText;
+      }
+    }
+
     final String subtitle;
     final IconData subtitleIcon;
     final Color subtitleIconColor;
-    if (isOnline && position != null) {
-      final loc = position.address?.isNotEmpty == true
-          ? position.address!
-          : position.coordinatesText;
-      subtitle = '$loc · $lastSyncText';
+    if (isOnline && locationLabel != null) {
+      subtitle = '$locationLabel · $lastSyncText';
       subtitleIcon = Icons.place;
       subtitleIconColor = PettiColors.marigoldDim;
-    } else if (position != null) {
-      // Offline but we have a last-known position.
-      final loc = position.address?.isNotEmpty == true
-          ? position.address!
-          : position.coordinatesText;
-      subtitle = '$loc · $lastSyncText';
+    } else if (locationLabel != null) {
+      // Offline but we have a last-known place.
+      subtitle = '$locationLabel · $lastSyncText';
       subtitleIcon = Icons.wifi_off_rounded;
       subtitleIconColor = PettiColors.trail;
     } else {
