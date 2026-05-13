@@ -29,6 +29,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../services/real_activity_builder.dart';
@@ -48,6 +49,55 @@ class PettiMainTabsScreen extends StatefulWidget {
 
 class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
   late int _index = widget.initialIndex.clamp(0, 3);
+
+  @override
+  void initState() {
+    super.initState();
+    // 2026-05-13: TraccarProvider.connect() bootstrap moved here from
+    // HomeScreen.initState. The old HomeScreen was the post-login root
+    // and owned this responsibility; when we replaced it with this
+    // tab scaffold the connect-on-mount path silently disappeared,
+    // leaving `traccar.devices` empty even for fully-provisioned users
+    // (the "Aún no hay mascotas" empty state on a working account).
+    //
+    // Reads credentials from Firestore (user profile doc — populated
+    // by /provision and by manual recovery scripts) and fires a single
+    // connect attempt. If credentials are missing or login fails, the
+    // empty state in each tab handles it gracefully.
+    //
+    // Deferred to post-first-frame so the build()'s Consumer<TraccarProvider>
+    // gets a render with the initial loading state before connect resolves.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initializeTraccar());
+  }
+
+  Future<void> _initializeTraccar() async {
+    if (!mounted) return;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final traccarProvider =
+        Provider.of<TraccarProvider>(context, listen: false);
+    final userId = authProvider.currentUser?.uid;
+    if (userId == null) return;
+
+    try {
+      final userProfile = await FirestoreService().getUserProfile(userId);
+      if (userProfile == null) return;
+      final email = userProfile['traccarEmail'] as String?;
+      final password = userProfile['traccarPassword'] as String?;
+      if (email == null || password == null) {
+        debugPrint(
+            '[PettiMainTabs] user has no traccar credentials yet — empty state');
+        return;
+      }
+      final success = await traccarProvider.connect(email, password);
+      if (success) {
+        await traccarProvider.refreshDevices();
+      }
+    } catch (e) {
+      // Network blip, expired creds, no device yet — each tab's empty
+      // state handles the missing-devices case. We just log and move on.
+      debugPrint('[PettiMainTabs] Traccar init failed: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

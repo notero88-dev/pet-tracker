@@ -31,7 +31,9 @@ import 'package:provider/provider.dart';
 import '../../models/device.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
+import '../../services/app_event_service.dart';
 import '../../services/provisioning_api.dart';
+import '../../services/reverse_geocoder.dart';
 import '../../services/wizard_step_result.dart';
 import '../../utils/constants.dart';
 import '../../utils/petti_theme.dart';
@@ -64,6 +66,12 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   List<Position> _historyPositions = [];
   Position? _selectedHistoryPosition;
 
+  /// Reverse-geocoded neighborhood / place name for the current position
+  /// (e.g. "Chico Norte"). Resolved async via ReverseGeocoder; null while
+  /// the lookup is in flight or if the geocoder has nothing useful.
+  /// Same pattern as the home-screen pet card so both surfaces agree.
+  String? _nearestPlace;
+
   @override
   void initState() {
     super.initState();
@@ -88,6 +96,24 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         _currentPosition = position;
         _updateMarker(position);
       });
+      _resolveNearestPlace(position);
+    }
+  }
+
+  /// Kick off a reverse-geocode for [position]. Cache lives in
+  /// ReverseGeocoder so consecutive lookups for the same coords (rounded
+  /// to ~11 m) hit memory instead of MapKit/Geocoder again. We don't
+  /// await — the result lands in [_nearestPlace] via setState whenever
+  /// it's ready, and the bottom panel falls back to `position.address`
+  /// or coordinates in the meantime.
+  Future<void> _resolveNearestPlace(Position position) async {
+    final name = await ReverseGeocoder.instance.nearestPlace(
+      position.latitude,
+      position.longitude,
+    );
+    if (!mounted) return;
+    if (name != _nearestPlace) {
+      setState(() => _nearestPlace = name);
     }
   }
 
@@ -124,6 +150,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           );
         }
       });
+      _resolveNearestPlace(position);
     }
   }
 
@@ -147,10 +174,23 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
   /// "Modo LIVE" / "Pet is lost" toggle.
   ///
-  /// On enable: confirm with the user (battery cost warning) → fire
-  /// MODE,1,30 to the device → on success, switch the app to high-cadence
-  /// polling. On disable: confirm restore → fire MODE,8,30 → switch
-  /// polling back to normal.
+  /// 2026-05-13: re-implemented on top of LOCK (per the three-state
+  /// architecture). The device gets `LOCK,10,5` — 10s reports for 5 min,
+  /// then auto-reverts to its previous persistent mode (Mode 8 HOME or
+  /// Mode 7 AWAY, depending on which side of the geofence it's on). This
+  /// replaces the older MODE,1,30 path that left the device in real-time
+  /// mode permanently until manually flipped back, which was a battery
+  /// timebomb if the user forgot to disable it.
+  ///
+  /// On enable: fire LOCK,10,5 → on success, the app's UI flag flips on
+  /// for the 5-minute window. We DO NOT need to track the expiry on the
+  /// server — the device handles its own revert.
+  ///
+  /// On disable (user taps "Volver a normal" before the 5min expires):
+  /// the app simply flips the UI flag back to false. The device cannot
+  /// be told to abort a LOCK early per vendor docs; the 5-minute window
+  /// will play out, but the user has already moved on. Acceptable
+  /// trade-off for the simpler architecture.
   ///
   /// We surface failures inline (snackbar) without flipping the toggle,
   /// so the visual state always reflects the device's actual mode (or our
@@ -161,10 +201,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   ///   - State is per-screen-session. Closing and reopening the screen
   ///     resets to false. Cross-session persistence (shared_preferences
   ///     keyed by IMEI) is a follow-up.
-  ///   - No home-screen indicator while the mode is active. Also follow-up.
-  ///   - On disable we always restore Mode 8 with T=30. If the device was
-  ///     originally in a different Mode 8 cadence, we lose that nuance.
-  ///     Acceptable for v1 — the home-setup wizard always uses T=30.
+  ///   - The 5-min countdown UI is not yet wired — flag follows the
+  ///     button rather than the actual LOCK expiry timer.
   Future<void> _toggleLiveMode() async {
     if (_isFlippingMode) return; // debounce double-tap
     final enabling = !_isLiveMode;
@@ -173,10 +211,55 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     if (!confirmed || !mounted) return;
 
     setState(() => _isFlippingMode = true);
+    // ignore: avoid_print
+    print('[ModeFlip] start enabling=$enabling imei=${widget.device.uniqueId}');
+
+    // Debug-dashboard activity stream — fire-and-forget. See
+    // pettrack-backend/docs/plans/2026-05-12-debug-dashboard.md.
+    AppEventService.fire(
+      'live_mode_toggled',
+      deviceImei: widget.device.uniqueId,
+      metadata: {
+        'on': enabling,
+        // LOCK params on enable; on disable there's no device-side action.
+        if (enabling) 'lockIntervalSeconds': 10,
+        if (enabling) 'lockRevertMinutes': 5,
+      },
+    );
+
     try {
-      final result = enabling
-          ? await _api.setModeRealtime(imei: widget.device.uniqueId, intervalSeconds: 30)
-          : await _api.setModeHome(imei: widget.device.uniqueId, intervalSeconds: 30);
+      final WizardStepResult result;
+      try {
+        if (enabling) {
+          // LIVE: fire LOCK,10,5. Device streams 10s reports for 5 min
+          // then auto-reverts to its previous persistent mode.
+          result = await _api.lockMode(
+            imei: widget.device.uniqueId,
+            intervalSeconds: 10,
+            revertMinutes: 5,
+          );
+        } else {
+          // Disable: no device-side action — LOCK auto-reverts on its
+          // own. Synthesize a success result so the rest of the flow
+          // treats this as a normal toggle. The persistent mode is
+          // already what push-service set on the last geofence event.
+          result = WizardStepOk('UI_FLIP');
+        }
+      } catch (e, st) {
+        // ignore: avoid_print
+        print('[ModeFlip] threw: $e\n$st');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error de red: $e'),
+            backgroundColor: PettiColors.alert,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 8),
+          ));
+        }
+        return;
+      }
+      // ignore: avoid_print
+      print('[ModeFlip] result=${result.runtimeType} $result');
       if (!mounted) return;
 
       if (result is! WizardStepOk) {
@@ -223,7 +306,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               backgroundColor: enabling ? PettiColors.alert : PettiColors.sabana,
               foregroundColor: PettiColors.cloud,
             ),
-            child: Text(enabling ? 'Buscar a Petti' : 'Volver a normal'),
+            child: Text(enabling ? 'Buscar a ${widget.device.name}' : 'Volver a normal'),
           ),
         ],
       ),
@@ -250,19 +333,27 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       content: Text(message),
       backgroundColor: PettiColors.alert,
       behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 8),
     ));
   }
 
   void _showModeFlipSuccess(bool enabling) {
+    final name = widget.device.name;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      // We optimistically flipped _isLiveMode on a 200 from the API, but the
+      // 200 just means the command was dispatched (TCP queue or SMS) — the
+      // device itself only acks on its next wake cycle (motion or scheduled
+      // poll). Reflect that honestly so the user doesn't think Mode 1 is
+      // already live and decide the device is broken when they don't see
+      // a fresh position right away.
       content: Text(
         enabling
-            ? 'Modo de búsqueda activado. Petti está en tiempo real.'
-            : 'Petti volvió a modo casa.',
+            ? 'Solicitud enviada. $name entrará en modo búsqueda cuando se mueva.'
+            : '$name volverá a modo casa cuando se mueva.',
       ),
       backgroundColor: enabling ? PettiColors.alert : PettiColors.sabana,
       behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(seconds: 5),
     ));
   }
 
@@ -457,9 +548,14 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   petName: widget.device.name,
                   isOnline: _currentPosition != null,
                   lastSeen: _currentPosition?.deviceTime,
-                  batteryPercent: _currentPosition
-                          ?.attributes?['batteryLevel'] as int? ??
-                      80,
+                  // 2026-05-12: was `_currentPosition?.attributes?['batteryLevel']
+                  // as int? ?? 80`. Traccar serializes batteryLevel as a
+                  // double (e.g. 80.0), so `as int?` threw _TypeError every
+                  // time the gear icon was tapped — user observed this as a
+                  // gray screen because the new route built, errored, and
+                  // popped to a blank surface. Position.batteryLevel is the
+                  // safe getter — it does `(num).toInt()` and handles nulls.
+                  batteryPercent: _currentPosition?.batteryLevel ?? 80,
                 ),
               ),
             ),
@@ -499,8 +595,16 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                     ),
                     const SizedBox(width: PettiSpacing.s2),
                     Expanded(
+                      // 2026-05-12: prefer the reverse-geocoded neighborhood
+                      // name ("Chico Norte") over Traccar's address field or
+                      // raw coordinates. Same source as the home-screen pet
+                      // card subtitle so both surfaces agree. Falls back to
+                      // pos.address (Traccar geocoded) then coordinatesText
+                      // while the reverse-geocode is still in flight.
                       child: Text(
-                        pos.address ?? pos.coordinatesText,
+                        _nearestPlace ??
+                            pos.address ??
+                            pos.coordinatesText,
                         style: PettiText.bodyStrong()
                             .copyWith(fontSize: 14),
                         maxLines: 2,
@@ -544,7 +648,12 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               ],
             ),
           ),
-          // Action row — Sand surface, two equal-width buttons.
+          // Action row — Sand surface. Design (chat3.md 2026-05-13):
+          // "En vivo" / Buscar is the prominent action — wider (flex 1.4
+          // matches the design's ratio), marigold filled, with a pulsing
+          // red live-dot and the brand's warm shadow. Historial sits
+          // secondary in cream. "Compartir" was removed entirely in the
+          // design pass (was never in this codebase either — no-op).
           Container(
             padding: const EdgeInsets.all(PettiSpacing.s3),
             decoration: const BoxDecoration(
@@ -556,56 +665,58 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    // Disable while a mode-flip command is in flight so a
-                    // double-tap can't fire two commands.
-                    onPressed: _isFlippingMode ? null : _toggleLiveMode,
-                    icon: _isFlippingMode
-                        ? const SizedBox(
-                            width: 16, height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            _isLiveMode
-                                ? Icons.stop_rounded
-                                : Icons.search_rounded,
-                          ),
-                    label: Text(
-                      _isFlippingMode
-                          ? 'Cambiando...'
-                          : _isLiveMode
-                              ? 'Detener búsqueda'
-                              : 'Buscar a Petti',
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _isLiveMode
-                          ? PettiColors.alert
-                          : PettiColors.midnight,
-                      side: BorderSide(
-                        color: _isLiveMode
-                            ? PettiColors.alert
-                            : PettiColors.midnight,
-                        width: 1.5,
-                      ),
-                    ),
+                  flex: 14, // 1.4× wider than Historial — design ratio
+                  child: _BuscarPrimaryButton(
+                    isLive: _isLiveMode,
+                    isLoading: _isFlippingMode,
+                    petName: widget.device.name,
+                    onTap: _isFlippingMode ? null : _toggleLiveMode,
                   ),
                 ),
                 const SizedBox(width: PettiSpacing.s2),
                 Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _showHistory ? _closeHistory : _loadHistory,
-                    icon: Icon(
-                      _showHistory
-                          ? Icons.close_rounded
-                          : Icons.history_rounded,
-                    ),
-                    label:
-                        Text(_showHistory ? 'Cerrar' : 'Historial'),
+                  flex: 10,
+                  child: _HistorialSecondaryButton(
+                    showHistory: _showHistory,
+                    onTap: _showHistory ? _closeHistory : _loadHistory,
                   ),
                 ),
               ],
             ),
           ),
+          // Pending-activation caption. The Mode-1 (real-time) command goes
+          // out via SMS / TCP queue the moment the user confirms, but the
+          // MT710 only processes it on its next wake (motion-triggered or
+          // scheduled poll). Until then, the button reads "Detener búsqueda"
+          // but no real-time positions are arriving — this caption owns the
+          // gap between "request sent" and "device actually in Mode 1".
+          if (_isLiveMode)
+            Padding(
+              padding: const EdgeInsets.only(
+                top: PettiSpacing.s2,
+                left: PettiSpacing.s3,
+                right: PettiSpacing.s3,
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.schedule_rounded,
+                    size: 14,
+                    color: PettiColors.fgDim,
+                  ),
+                  const SizedBox(width: PettiSpacing.s1),
+                  Expanded(
+                    child: Text(
+                      'El modo de búsqueda se activará cuando '
+                      '${widget.device.name} se mueva.',
+                      style: PettiText.bodySm().copyWith(
+                        color: PettiColors.fgDim,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -784,5 +895,229 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         _updateMarker(_currentPosition!);
       }
     });
+  }
+}
+
+// -----------------------------------------------------------------------------
+// _BuscarPrimaryButton — the prominent marigold-filled action in the map
+// sheet. Two visual states:
+//
+//   IDLE  → marigold fill, search icon, "Buscar a [pet]" label
+//   LIVE  → marigold fill, pulsing red dot, "En vivo" label (was the
+//           bigger design change: when the user taps Buscar and LOCK
+//           fires, the button visually flips to a LIVE-like indicator
+//           communicating "we're actively tracking right now")
+//
+// Per chat3.md from the 2026-05-13 design pass: "En vivo ahora destaca:
+// botón marigold lleno, más ancho, con punto rojo pulsante de 'live' y
+// la sombra cálida de marca."
+// -----------------------------------------------------------------------------
+class _BuscarPrimaryButton extends StatelessWidget {
+  final bool isLive;
+  final bool isLoading;
+  final String petName;
+  final VoidCallback? onTap;
+
+  const _BuscarPrimaryButton({
+    required this.isLive,
+    required this.isLoading,
+    required this.petName,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: PettiColors.marigold,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              // Brand-warm shadow per the design spec.
+              BoxShadow(
+                color: PettiColors.marigold.withValues(alpha: 0.35),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: PettiColors.midnight.withValues(alpha: 0.06),
+                blurRadius: 0,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (isLoading)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(PettiColors.midnight),
+                  ),
+                )
+              else if (isLive)
+                const _LivePulseDot()
+              else
+                const Icon(Icons.search_rounded,
+                    size: 18, color: PettiColors.midnight),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  isLoading
+                      ? 'Cambiando…'
+                      : isLive
+                          ? 'En vivo'
+                          : 'Buscar a $petName',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Space Grotesk',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: PettiColors.midnight,
+                    letterSpacing: -0.01 * 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pulsing red "live" indicator — the small red dot with an animated
+/// halo that signals real-time streaming. Matches the design's
+/// keyframes petti-pulse (scale 0.6→2.4, opacity 0.85→0).
+class _LivePulseDot extends StatefulWidget {
+  const _LivePulseDot();
+
+  @override
+  State<_LivePulseDot> createState() => _LivePulseDotState();
+}
+
+class _LivePulseDotState extends State<_LivePulseDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 14,
+      height: 14,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedBuilder(
+            animation: _ctrl,
+            builder: (context, _) {
+              final t = _ctrl.value;
+              return Container(
+                width: 14 * (0.6 + 1.8 * t),
+                height: 14 * (0.6 + 1.8 * t),
+                decoration: BoxDecoration(
+                  color: PettiColors.alert.withValues(alpha: 0.85 * (1 - t)),
+                  shape: BoxShape.circle,
+                ),
+              );
+            },
+          ),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: PettiColors.alert,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: PettiColors.alert.withValues(alpha: 0.25),
+                  blurRadius: 0,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// _HistorialSecondaryButton — cream secondary action. Toggles between
+// "Historial" (when the trail is hidden) and "Cerrar" (when it's shown).
+// -----------------------------------------------------------------------------
+class _HistorialSecondaryButton extends StatelessWidget {
+  final bool showHistory;
+  final VoidCallback onTap;
+
+  const _HistorialSecondaryButton({
+    required this.showHistory,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: PettiColors.cloud,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: PettiColors.borderLight),
+          ),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                showHistory ? Icons.close_rounded : Icons.history_rounded,
+                size: 18,
+                color: PettiColors.midnight,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  showHistory ? 'Cerrar' : 'Historial',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: PettiColors.midnight,
+                    letterSpacing: -0.005 * 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -7,9 +7,9 @@
 //   - Top bar: "ACTIVIDAD / Mis mascotas" + calendar / more icons
 //   - Pet picker: horizontal pill scroller
 //   - Pet header strip: avatar + name + battery + last-sync + Mapa CTA
-//   - Range tabs: Día / Semana / Mes / Año (only Día has data in v1)
+//   - Range tabs: Día / Semana / Mes (only Día has data in v1)
 //   - Hero rings card: 3 concentric activity rings + legend
-//   - Stat tiles 2x2: Pasos · Ritmo prom. · Vel. máx. · Calorías
+//   - Stat tiles 2x2: Pasos · Velocidad prom. · Vel. máx. · Calorías
 //   - Weekly chart card: bar chart with goal line + sparkline
 //
 // Deliberately omitted from this v1 (deferred follow-ups, see KANBAN):
@@ -26,7 +26,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../models/daily_activity.dart';
-import '../../services/activity_calculator.dart';
 import '../../utils/petti_theme.dart';
 import 'mock_activity_data.dart' show demoActivities;
 
@@ -703,7 +702,10 @@ class _RangeTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const opts = ['Día', 'Semana', 'Mes', 'Año'];
+    // 2026-05-13 design pass: dropped "Año". Year-over-year activity for
+    // a 6-month-old startup's data is noise — Día/Semana/Mes covers the
+    // meaningful comparison windows. Re-add when historical data warrants.
+    const opts = ['Día', 'Semana', 'Mes'];
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
@@ -1062,11 +1064,15 @@ class _StatTilesGrid extends StatelessWidget {
         accent: PettiColors.marigoldDim,
         iconBg: PettiColors.marigoldSoft,
       ),
+      // 2026-05-13 design pass: "Ritmo prom. (bpm)" → "Velocidad prom.
+      // (km/h)". The MT710 has no heart-rate sensor so a bpm value was
+      // never real; speed is the actually-meaningful equivalent and is
+      // already computed from GPS distance / active minutes.
       _StatTileSpec(
         icon: Icons.speed_rounded,
-        label: 'RITMO PROM.',
-        value: ActivityCalculator.formatPace(pet.averagePaceMinPerKm),
-        unit: '/km',
+        label: 'VELOCIDAD PROM.',
+        value: _formatAverageSpeedKmh(pet.distanceKm, pet.activeMinutes),
+        unit: 'km/h',
         accent: PettiColors.sabana,
         iconBg: PettiColors.sabanaSoft,
       ),
@@ -1106,6 +1112,15 @@ class _StatTilesGrid extends StatelessWidget {
       buf.write(s[i]);
     }
     return buf.toString();
+  }
+
+  /// Average speed = distance / time. Returns the value as a single
+  /// decimal place ("4.2"), or "—" when there's no active time yet.
+  static String _formatAverageSpeedKmh(double distanceKm, int activeMinutes) {
+    if (activeMinutes <= 0 || distanceKm <= 0) return '—';
+    final hours = activeMinutes / 60.0;
+    final speed = distanceKm / hours;
+    return speed.toStringAsFixed(1);
   }
 }
 
