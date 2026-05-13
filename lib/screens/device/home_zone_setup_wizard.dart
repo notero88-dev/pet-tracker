@@ -30,7 +30,7 @@ import 'package:network_info_plus/network_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/device.dart';
-import '../../screens/home/home_screen.dart';
+import '../../screens/main/petti_main_tabs_screen.dart';
 import '../../services/mode8_configuration_controller.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/zona_casa_illustrations.dart';
@@ -132,7 +132,7 @@ class _HomeZoneSetupWizardState extends State<HomeZoneSetupWizard> {
   void _onExit() {
     if (widget.isOnboarding) {
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const PettiMainTabsScreen()),
         (_) => false,
       );
     } else {

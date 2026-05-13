@@ -30,6 +30,7 @@
 
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +40,7 @@ import '../screens/alerts/alert_detail_screen.dart';
 import '../utils/app_navigator.dart';
 import '../widgets/petti/petti_alert_banner.dart';
 import 'firestore_service.dart';
+import 'provisioning_api.dart';
 
 class FCMService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -150,18 +152,54 @@ class FCMService {
     }
   }
 
-  /// Get the current FCM token (if available) and persist it to Firestore.
-  /// Also wires the refresh listener if not already wired.
+  /// Get the current FCM token (if available) and persist it to BOTH
+  /// Firestore (read by the app itself, e.g. settings) AND the
+  /// provisioning-api postgres (read by the push-service when it fans
+  /// out geofenceExit / alarm events to FCM).
+  ///
+  /// Why both:
+  ///   - Firestore: the app reads its own user doc for diagnostics
+  ///     and may surface token registration state in Settings.
+  ///   - Postgres: push-service (`notificationService.js` →
+  ///     `database.getCustomerByDeviceId`) looks up the token there.
+  ///     Without this bridge no notifications can be sent — even with
+  ///     a Traccar geofenceExit firing correctly.
+  ///
+  /// Both writes are best-effort; one failing doesn't block the other.
   Future<void> _bindToken() async {
     final token = await _messaging.getToken();
     if (token != null) {
       debugPrint('FCM Token: $token');
-      await _firestore.saveFcmToken(token);
+      await _persistToken(token);
     }
     _tokenRefreshSub ??= _messaging.onTokenRefresh.listen((newToken) {
       debugPrint('FCM Token refreshed: $newToken');
-      _firestore.saveFcmToken(newToken);
+      _persistToken(newToken);
     });
+  }
+
+  /// Write the FCM token to Firestore + provisioning-api in parallel.
+  /// Either failing is logged but doesn't throw — the next token
+  /// refresh will retry.
+  Future<void> _persistToken(String token) async {
+    final email = FirebaseAuth.instance.currentUser?.email;
+    await Future.wait([
+      _firestore.saveFcmToken(token).catchError((e) {
+        debugPrint('FCM: Firestore saveFcmToken failed: $e');
+      }),
+      if (email != null) _postTokenToProvisioningApi(email, token),
+    ]);
+  }
+
+  /// Register the token with provisioning-api so push-service can
+  /// look it up in postgres. Delegated to ProvisioningApi so the API
+  /// key + base URL stay in one place. Best-effort; failure logged.
+  Future<void> _postTokenToProvisioningApi(String email, String token) async {
+    final ok = await ProvisioningApi()
+        .registerFcmToken(email: email, token: token);
+    debugPrint(ok
+        ? 'FCM: token registered with provisioning-api'
+        : 'FCM: provisioning-api registration failed (best-effort, will retry on next refresh)');
   }
 
   /// Current notification permission status. Use this to gate UI like

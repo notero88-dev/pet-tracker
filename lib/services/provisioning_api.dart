@@ -94,6 +94,45 @@ class ProvisioningApi {
     }
   }
   
+  /// Register the user's Firebase Cloud Messaging token with the
+  /// provisioning-api so push-service can fan out geofence-exit /
+  /// alarm notifications via FCM. Returns `true` on success.
+  ///
+  /// The token also gets written to Firestore via FirestoreService;
+  /// the postgres mirror here is what push-service queries (Firestore
+  /// is the app's own read path). Both writes are best-effort —
+  /// either can fail without blocking the other.
+  ///
+  /// 404 from the API means the customer row hasn't been mirrored yet
+  /// (legacy account or pre-/provision install). Skip silently; the
+  /// next /provision call creates the row and the next token refresh
+  /// will land it.
+  Future<bool> registerFcmToken({
+    required String email,
+    required String token,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/fcm-token'),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': _apiKey,
+        },
+        body: jsonEncode({'email': email, 'token': token}),
+      ).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        return true;
+      }
+      // ignore: avoid_print
+      print('registerFcmToken: ${response.statusCode} ${response.body}');
+      return false;
+    } catch (e) {
+      // ignore: avoid_print
+      print('registerFcmToken failed: $e');
+      return false;
+    }
+  }
+
   // Temporary storage for last provisioned credentials
   Map<String, dynamic>? _lastProvisionedCredentials;
   

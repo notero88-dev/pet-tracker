@@ -18,6 +18,7 @@ import 'package:uuid/uuid.dart';
 import '../../models/device.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
+import '../../services/app_event_service.dart';
 import '../../services/pending_command_tracker.dart';
 import '../../services/provisioning_api.dart';
 import '../../services/wizard_step_result.dart';
@@ -25,7 +26,7 @@ import '../../utils/petti_theme.dart';
 import '../../widgets/petti/petti_pending_commands_banner.dart';
 import '../../widgets/petti/petti_screen_heading.dart';
 import '../../widgets/petti/petti_wizard_timeline.dart';
-import '../home/home_screen.dart';
+import '../main/petti_main_tabs_screen.dart';
 import 'mode8_wizard_state.dart';
 
 class SetupGeofenceScreen extends StatefulWidget {
@@ -399,6 +400,17 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
 
     final intentId = const Uuid().v4();
 
+    // Debug-dashboard activity stream — fire-and-forget. See
+    // pettrack-backend/docs/plans/2026-05-12-debug-dashboard.md.
+    AppEventService.fire(
+      'home_setup_started',
+      deviceImei: imei,
+      metadata: {
+        'intentId': intentId,
+        'radiusMeters': _radiusMeters.round(),
+      },
+    );
+
     final HomeSetupIntent posted;
     try {
       posted = await _api.postHomeSetup(
@@ -419,6 +431,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     // Poll until terminal. 3s cadence matches the home-screen banner so
     // the two surfaces feel consistent when we wire the banner in 1.1.
     HomeSetupIntent latest = posted;
+    bool firedCompleted = false;
     while (!latest.isTerminal && mounted) {
       _applyIntentToWizardState(latest);
       await Future.delayed(const Duration(seconds: 3));
@@ -434,6 +447,16 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
           return;
         }
         latest = next;
+        // First observation of a successful terminal status: emit
+        // home_setup_completed exactly once for the dashboard.
+        if (!firedCompleted && latest.isSuccess) {
+          firedCompleted = true;
+          AppEventService.fire(
+            'home_setup_completed',
+            deviceImei: imei,
+            metadata: {'intentId': intentId, 'status': latest.status},
+          );
+        }
       } on HomeSetupApiException catch (e) {
         // Transient poll failures shouldn't blow up the wizard — the
         // intent is durable on the server, so we keep trying. After a
@@ -664,7 +687,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
 
   void _goToHome() {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      MaterialPageRoute(builder: (_) => const PettiMainTabsScreen()),
       (route) => false,
     );
   }

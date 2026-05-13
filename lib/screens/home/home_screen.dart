@@ -466,23 +466,31 @@ class _PetCardState extends State<_PetCard> {
       }
     }
 
-    // Compose the subtitle as: place · battery% · lastSync.
+    // Compose the subtitle as: place · [battery icon] battery% · lastSync.
     // Battery is omitted when null (no position yet). The order is
     // intentional — battery sits next to location because they're both
     // "current state of the device" facts; lastSync is when we knew.
-    final parts = <String>[
-      if (locationLabel != null) locationLabel,
-      if (battery != null) '$battery%',
-      lastSyncText,
-    ];
+    //
+    // Battery icon variant + color depends on level:
+    //   ≥80%   battery_full_rounded     · sabana (green)
+    //   50-79  battery_5_bar_rounded    · sabana
+    //   20-49  battery_3_bar_rounded    · marigoldDim (warning yellow)
+    //   <20    battery_alert_rounded    · duskRose (alert red)
+    // Matches the design system's color semantics already used on the
+    // activity dashboard's header strip.
     final hasLocation = locationLabel != null;
-    final subtitle = hasLocation
-        ? parts.join(' · ')
-        : 'Sin conexión · $lastSyncText';
     final IconData subtitleIcon =
         isOnline ? Icons.place : Icons.wifi_off_rounded;
     final Color subtitleIconColor =
         isOnline ? PettiColors.marigoldDim : PettiColors.trail;
+    final Color subtitleTextColor =
+        isOnline ? PettiColors.fg : PettiColors.trail;
+    final TextStyle subtitleTextStyle = TextStyle(
+      fontFamily: 'Inter',
+      fontSize: 12.5,
+      color: subtitleTextColor,
+      letterSpacing: -0.0625,
+    );
 
     final initial = displayName.isNotEmpty
         ? displayName.substring(0, 1).toUpperCase()
@@ -545,15 +553,16 @@ class _PetCardState extends State<_PetCard> {
                           ),
                           const SizedBox(width: 5),
                           Expanded(
-                            child: Text(
-                              subtitle,
-                              style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontSize: 12.5,
-                                color: isOnline
-                                    ? PettiColors.fg
-                                    : PettiColors.trail,
-                                letterSpacing: -0.0625,
+                            child: Text.rich(
+                              TextSpan(
+                                style: subtitleTextStyle,
+                                children: _subtitleSpans(
+                                  hasLocation: hasLocation,
+                                  locationLabel: locationLabel,
+                                  battery: battery,
+                                  lastSyncText: lastSyncText,
+                                  textStyle: subtitleTextStyle,
+                                ),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -575,6 +584,70 @@ class _PetCardState extends State<_PetCard> {
         ),
       ),
     );
+  }
+
+  /// Build the inline spans for the pet-card subtitle. Centralized here
+  /// so the battery icon + color logic stays next to the rest of the
+  /// state-derivation code.
+  ///
+  /// Shape: "place · [icon] battery% · lastSync"
+  /// — when there's no location, the subtitle collapses to
+  ///   "Sin conexión · lastSync" (no battery either, because no position).
+  static List<InlineSpan> _subtitleSpans({
+    required bool hasLocation,
+    required String? locationLabel,
+    required int? battery,
+    required String lastSyncText,
+    required TextStyle textStyle,
+  }) {
+    if (!hasLocation) {
+      return [TextSpan(text: 'Sin conexión · $lastSyncText')];
+    }
+    final spans = <InlineSpan>[
+      TextSpan(text: locationLabel),
+    ];
+    if (battery != null) {
+      final iconData = _batteryIconFor(battery);
+      final iconColor = _batteryColorFor(battery);
+      spans.addAll([
+        const TextSpan(text: ' · '),
+        // Baseline alignment keeps the icon vertically centered with the
+        // surrounding text instead of dropping to the descender line.
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 3),
+            child: Icon(iconData, size: 14, color: iconColor),
+          ),
+        ),
+        TextSpan(
+          text: '$battery%',
+          style: textStyle.copyWith(color: iconColor),
+        ),
+      ]);
+    }
+    spans.add(TextSpan(text: ' · $lastSyncText'));
+    return spans;
+  }
+
+  /// Battery icon variant by level. Material's `battery_*_bar_rounded`
+  /// family — we step every ~20% to mirror iOS-style segmentation.
+  static IconData _batteryIconFor(int percent) {
+    if (percent < 20) return Icons.battery_alert_rounded;
+    if (percent < 40) return Icons.battery_2_bar_rounded;
+    if (percent < 60) return Icons.battery_3_bar_rounded;
+    if (percent < 80) return Icons.battery_4_bar_rounded;
+    return Icons.battery_full_rounded;
+  }
+
+  /// Battery color states:
+  ///   <20%  alert red (duskRose)   — "charge it now"
+  ///   20-49 marigoldDim            — "soon"
+  ///   ≥50   sabana                 — "fine"
+  static Color _batteryColorFor(int percent) {
+    if (percent < 20) return PettiColors.duskRose;
+    if (percent < 50) return PettiColors.marigoldDim;
+    return PettiColors.sabana;
   }
 
   /// Spanish relative-time formatter, mirrors Traccar's "hace 2 horas".

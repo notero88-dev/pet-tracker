@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/petti_theme.dart';
-import '../home/home_screen.dart';
+import '../main/petti_main_tabs_screen.dart';
 
 /// Sign-up — Petti style.
 ///
@@ -63,13 +64,47 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     if (success) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const PettiMainTabsScreen()),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(authProvider.errorMessage ?? 'Error al registrarse'),
         ),
+      );
+    }
+  }
+
+  /// Same Google OAuth flow as the login screen — Firebase's
+  /// `signInWithCredential` creates a new user OR signs into an existing
+  /// one matched by email, so a single button serves both screens.
+  Future<void> _handleGoogleSignIn() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.signInWithGoogle();
+    if (!mounted) return;
+    if (success) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const PettiMainTabsScreen()),
+      );
+    } else if (authProvider.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(authProvider.errorMessage!)),
+      );
+    }
+  }
+
+  /// Same Apple OAuth flow as the login screen — same Firebase contract.
+  Future<void> _handleAppleSignIn() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.signInWithApple();
+    if (!mounted) return;
+    if (success) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const PettiMainTabsScreen()),
+      );
+    } else if (authProvider.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(authProvider.errorMessage!)),
       );
     }
   }
@@ -267,7 +302,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     decoration: TextDecoration.underline,
                                   ),
                                 ),
-                                const TextSpan(text: ' de Petti'),
+                                const TextSpan(text: ' de Besti'),
                               ],
                             ),
                           ),
@@ -293,6 +328,60 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                           )
                         : const Text('Crear cuenta'),
+                  ),
+                ),
+                const SizedBox(height: PettiSpacing.s4),
+
+                // Divider + Google sign-up shortcut. Same behavior as the
+                // login screen — Google OAuth creates the Firebase user if
+                // they're new, signs them in if they already exist.
+                Row(
+                  children: [
+                    Expanded(
+                        child: Divider(color: PettiColors.fog, thickness: 1)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: PettiSpacing.s3),
+                      child: Text(
+                        'o continúa con',
+                        style: PettiText.label().copyWith(
+                          color: PettiColors.fgDim,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                        child: Divider(color: PettiColors.fog, thickness: 1)),
+                  ],
+                ),
+                const SizedBox(height: PettiSpacing.s4),
+
+                Consumer<AuthProvider>(
+                  builder: (context, auth, _) => OutlinedButton.icon(
+                    onPressed:
+                        auth.isLoading ? null : _handleGoogleSignIn,
+                    icon: const _GoogleGlyph(size: 18),
+                    label: const Text('Continuar con Google'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: PettiColors.midnight,
+                      side: BorderSide(
+                          color: PettiColors.borderLight, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      minimumSize: const Size.fromHeight(0),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: PettiSpacing.s2),
+
+                // Sign in with Apple. App Store Review 4.8 requires it on
+                // any iOS app that offers third-party SSO.
+                Consumer<AuthProvider>(
+                  builder: (context, auth, _) => SignInWithAppleButton(
+                    onPressed:
+                        auth.isLoading ? () {} : _handleAppleSignIn,
+                    text: 'Continuar con Apple',
+                    style: SignInWithAppleButtonStyle.black,
+                    height: 48,
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
                 const SizedBox(height: PettiSpacing.s4),
@@ -326,4 +415,69 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
     );
   }
+}
+
+/// Google "G" glyph drawn with CustomPaint — same approach as the login
+/// screen's helper. Replace with the official SVG asset if marketing
+/// wants pixel-perfect.
+class _GoogleGlyph extends StatelessWidget {
+  final double size;
+  const _GoogleGlyph({this.size = 18});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _GoogleGlyphPainter()),
+    );
+  }
+}
+
+class _GoogleGlyphPainter extends CustomPainter {
+  static const _blue = Color(0xFF4285F4);
+  static const _green = Color(0xFF34A853);
+  static const _yellow = Color(0xFFFBBC05);
+  static const _red = Color(0xFFEA4335);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    final stroke = size.width * 0.22;
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+
+    final rect = Rect.fromCircle(center: c, radius: radius - stroke / 2);
+    void arc(double startDeg, double sweepDeg, Color color) {
+      ringPaint.color = color;
+      canvas.drawArc(
+        rect,
+        startDeg * 3.1415926 / 180,
+        sweepDeg * 3.1415926 / 180,
+        false,
+        ringPaint,
+      );
+    }
+
+    arc(-50, 100, _blue);
+    arc(50, 90, _green);
+    arc(140, 80, _yellow);
+    arc(220, 80, _red);
+
+    final legPaint = Paint()
+      ..color = _blue
+      ..style = PaintingStyle.fill;
+    final legRect = Rect.fromLTWH(
+      c.dx,
+      c.dy - stroke / 2,
+      radius - stroke / 2 + 1,
+      stroke,
+    );
+    canvas.drawRect(legRect, legPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _GoogleGlyphPainter oldDelegate) => false;
 }

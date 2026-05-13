@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../utils/petti_theme.dart';
 import 'auth/login_screen.dart';
-import 'home/home_screen.dart';
+import 'main/petti_main_tabs_screen.dart';
 
 /// Splash — first surface the user sees on app open.
 ///
@@ -60,7 +60,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => isLoggedIn ? const HomeScreen() : const LoginScreen(),
+        builder: (_) => isLoggedIn ? const PettiMainTabsScreen() : const LoginScreen(),
       ),
     );
   }
@@ -111,7 +111,7 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   const SizedBox(height: PettiSpacing.s5),
                   Text(
-                    'Petti',
+                    'Besti',
                     style: PettiText.display().copyWith(
                       fontSize: 44,
                       color: PettiColors.midnight,
