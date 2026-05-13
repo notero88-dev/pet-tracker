@@ -32,12 +32,11 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/firestore_service.dart';
-import '../../services/real_activity_builder.dart';
 import '../../utils/petti_theme.dart';
-import '../activity/pet_activity_screen.dart';
 import 'cuenta_tab.dart';
 import 'mapa_tab.dart';
 import 'mascotas_tab.dart';
+import 'salud_tab.dart';
 
 class PettiMainTabsScreen extends StatefulWidget {
   final int initialIndex;
@@ -110,7 +109,7 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
         index: _index,
         children: const [
           MapaTab(),
-          _SaludTabHost(),
+          SaludTab(),
           MascotasTab(),
           CuentaTab(),
         ],
@@ -123,22 +122,6 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
   }
 }
 
-/// Hosts PetActivityScreen.live inside the Salud tab. Builds the
-/// async loader once per session — IndexedStack keeps it alive so the
-/// Traccar history fetch only runs the first time the user opens Salud.
-class _SaludTabHost extends StatelessWidget {
-  const _SaludTabHost();
-
-  @override
-  Widget build(BuildContext context) {
-    return PetActivityScreen.live(
-      loader: () => realActivitiesForUser(
-        traccar: Provider.of<TraccarProvider>(context, listen: false),
-        firestore: FirestoreService(),
-      ),
-    );
-  }
-}
 
 // -----------------------------------------------------------------------------
 // Bottom tab bar — cream-on-cloud, marigold underline pill for selection.

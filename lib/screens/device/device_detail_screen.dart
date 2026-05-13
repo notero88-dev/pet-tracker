@@ -900,22 +900,24 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
 // -----------------------------------------------------------------------------
 // _BuscarPrimaryButton — the prominent marigold-filled action in the map
-// sheet. Two visual states:
+// sheet. Per chat3.md design pass (2026-05-13): label is ALWAYS "En vivo"
+// (not "Buscar a [pet]") and the pulsing red dot is always shown. The
+// design treats this as a constant "live tracking is available — tap to
+// activate" affordance, not a stateful toggle. Tapping it fires LOCK,10,5
+// which streams 10s positions for 5 min; the device auto-reverts, so
+// there's no "off" state to render.
 //
-//   IDLE  → marigold fill, search icon, "Buscar a [pet]" label
-//   LIVE  → marigold fill, pulsing red dot, "En vivo" label (was the
-//           bigger design change: when the user taps Buscar and LOCK
-//           fires, the button visually flips to a LIVE-like indicator
-//           communicating "we're actively tracking right now")
+// Loading state: subtitle changes briefly to "Cambiando…" while LOCK
+// dispatches. After OK reply we go back to "En vivo".
 //
-// Per chat3.md from the 2026-05-13 design pass: "En vivo ahora destaca:
-// botón marigold lleno, más ancho, con punto rojo pulsante de 'live' y
-// la sombra cálida de marca."
+// Class kept named _BuscarPrimaryButton for internal lineage even though
+// the visible label is "En vivo" — easier to grep for if something
+// regresses.
 // -----------------------------------------------------------------------------
 class _BuscarPrimaryButton extends StatelessWidget {
   final bool isLive;
   final bool isLoading;
-  final String petName;
+  final String petName; // kept for analytics/event firing; not rendered
   final VoidCallback? onTap;
 
   const _BuscarPrimaryButton({
@@ -965,19 +967,15 @@ class _BuscarPrimaryButton extends StatelessWidget {
                         AlwaysStoppedAnimation<Color>(PettiColors.midnight),
                   ),
                 )
-              else if (isLive)
-                const _LivePulseDot()
               else
-                const Icon(Icons.search_rounded,
-                    size: 18, color: PettiColors.midnight),
+                // Always render the pulsing red live-dot, both idle and
+                // active. The design treats this as a constant
+                // "live-ready" indicator on the primary action.
+                const _LivePulseDot(),
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
-                  isLoading
-                      ? 'Cambiando…'
-                      : isLive
-                          ? 'En vivo'
-                          : 'Buscar a $petName',
+                  isLoading ? 'Cambiando…' : 'En vivo',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
