@@ -28,6 +28,7 @@
 // (future work: Hologram inbound webhook, Option B).
 
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import '../utils/constants.dart';
 
@@ -137,7 +138,7 @@ class DeviceCommandsApi {
     try {
       final res = await _client.get(
         Uri.parse('$baseUrl/devices/$imei/online'),
-        headers: _headers,
+        headers: await _authHeaders(),
       );
       if (res.statusCode != 200) return false;
       final json = jsonDecode(res.body) as Map<String, dynamic>;
@@ -151,10 +152,26 @@ class DeviceCommandsApi {
   // Internal
   // -----------------------------------------------------------------
 
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-      };
+  /// Build auth headers. Mirrors ProvisioningApi._authHeaders — see that
+  /// doc for the Phase B / Phase C migration story. The Firebase ID
+  /// token is preferred by the backend; the legacy `apiKey` field
+  /// remains as a fall-through path for one ship cycle and is dropped
+  /// alongside the backend's API_KEY rotation in Phase C.
+  Future<Map<String, String>> _authHeaders() async {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+    };
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+    } catch (_) {
+      // Token fetch failed — fall through with API key only.
+    }
+    return headers;
+  }
 
   Future<DeviceCommandResult> _post(
     String path,
@@ -164,7 +181,7 @@ class DeviceCommandsApi {
       final res = await _client
           .post(
             Uri.parse('$baseUrl$path'),
-            headers: _headers,
+            headers: await _authHeaders(),
             body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 40));

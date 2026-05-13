@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import '../utils/constants.dart';
 import '../models/device.dart';
@@ -9,18 +10,44 @@ class ProvisioningApi {
   final String baseUrl = AppConstants.provisioningApiUrl;
   final http.Client _http;
 
-  // Production API key (from backend deployment)
+  // Legacy production API key (from backend deployment).
+  //
+  // Phase B (2026-05-13): kept as a fall-through path while the backend
+  // is in "either auth path accepted" mode. Every authenticated request
+  // ALSO sends a Firebase ID token via Authorization: Bearer — when both
+  // are present the server uses the Bearer token and ignores this key,
+  // and the legacy-path warning log stays silent.
+  //
+  // Phase C removes this constant entirely; the backend rotates API_KEY
+  // on the same ship so old builds can't accidentally still authenticate.
   static const String _apiKey = 'pt_prod_427cce864697e6469353e02b9495e32427e266033f93049c54b26ef632a71c92';
 
   ProvisioningApi({http.Client? httpClient})
       : _http = httpClient ?? http.Client();
 
-  /// Get headers with API key
-  Map<String, String> get _headers {
-    return {
+  /// Build auth headers. Async because we have to ask Firebase for a
+  /// fresh ID token (it's auto-refreshed by the SDK; we don't cache).
+  ///
+  /// Includes BOTH `Authorization: Bearer <token>` (when signed in) AND
+  /// the legacy `x-api-key` during Phase B. The server prefers Bearer
+  /// when present. If the user isn't signed in we fall back to API key
+  /// only — only pre-login flows would hit that path, and none of our
+  /// authenticated endpoints get called pre-login today.
+  Future<Map<String, String>> _authHeaders() async {
+    final headers = <String, String>{
       'Content-Type': 'application/json',
       'x-api-key': _apiKey,
     };
+    try {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+    } catch (_) {
+      // Token fetch failed (offline, expired session, etc.). Fall through
+      // with x-api-key only — the legacy path still works during Phase B.
+    }
+    return headers;
   }
 
   /// Provision a new device (creates Traccar device + business DB entry)
@@ -53,7 +80,7 @@ class ProvisioningApi {
 
       final response = await http.post(
         Uri.parse('$baseUrl/provision'),
-        headers: _headers,
+        headers: await _authHeaders(),
         body: jsonEncode({
           'email': userEmail,
           'phone': phoneToSend,
@@ -114,10 +141,7 @@ class ProvisioningApi {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/fcm-token'),
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': _apiKey,
-        },
+        headers: await _authHeaders(),
         body: jsonEncode({'email': email, 'token': token}),
       ).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
@@ -154,7 +178,7 @@ class ProvisioningApi {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/device-status/$traccarDeviceId'),
-        headers: _headers,
+        headers: await _authHeaders(),
       );
 
       if (response.statusCode == 200) {
@@ -185,7 +209,7 @@ class ProvisioningApi {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/send-command/$traccarDeviceId'),
-        headers: _headers,
+        headers: await _authHeaders(),
         body: jsonEncode({
           'type': type,
           'attributes': attributes ?? {},
@@ -264,7 +288,7 @@ class ProvisioningApi {
     try {
       // ignore: avoid_print
       print('[Wizard] POST $uri body=${jsonEncode(body)}');
-      final res = await _http.post(uri, headers: _headers, body: jsonEncode(body));
+      final res = await _http.post(uri, headers: await _authHeaders(), body: jsonEncode(body));
       // ignore: avoid_print
       print('[Wizard] <- ${res.statusCode} body=${res.body}');
       Map<String, dynamic> json;
@@ -393,6 +417,14 @@ class ProvisioningApi {
   /// Per Mictrack protocol PDF §3.3.1, Mode 1 T range is [10,600] seconds.
   /// We default to 30s — same cadence as Mode 8 outdoor — to keep the
   /// position-stream UX consistent across the two modes.
+  ///
+  /// **Deprecated 2026-05-13 — use [lockMode] for the "Buscar a [pet]"
+  /// flow.** Mode 1 is permanent until manually reverted, which means a
+  /// forgotten "Buscar" session drains the battery overnight. LOCK is a
+  /// time-bounded overlay that auto-reverts to the device's previous mode
+  /// after [revertMinutes], so a panicked tap → forgot doesn't kill the
+  /// device. Kept here for back-compat with code paths that still call it
+  /// (e.g. tests, debug screens) until those migrate.
   Future<WizardStepResult> setModeRealtime({
     required String imei,
     int intervalSeconds = 30,
@@ -406,6 +438,45 @@ class ProvisioningApi {
       imei: imei,
       pathSuffix: 'mode',
       body: {'type': 'realtime', 'intervalSeconds': intervalSeconds},
+      queueMs: queueMs,
+    );
+  }
+
+  /// LIVE mode — temporary "Buscar a [pet]" override.
+  ///
+  /// Sends `LOCK,intervalSeconds,revertMinutes` to the device. The device
+  /// streams positions at [intervalSeconds] for [revertMinutes], then
+  /// auto-reverts to its previous persistent mode (Mode 8 HOME or Mode 7
+  /// AWAY). No server-side timer needed — the device handles the revert
+  /// itself per Mictrack PDF p.1.
+  ///
+  /// This is the recommended replacement for [setModeRealtime] in the
+  /// "Pet is lost" UX. Unlike Mode 1 (which is permanent), LOCK can't
+  /// silently drain the battery if the user forgets to switch back.
+  ///
+  /// Vendor ranges (Mictrack_MT710_Commands_List.pdf p.1):
+  ///   intervalSeconds 10..60, revertMinutes 1..60.
+  Future<WizardStepResult> lockMode({
+    required String imei,
+    int intervalSeconds = 10,
+    int revertMinutes = 5,
+    int queueMs = 14400000,
+  }) async {
+    if (intervalSeconds < 10 || intervalSeconds > 60) {
+      throw ArgumentError(
+          'intervalSeconds must be 10..60 for LOCK, got $intervalSeconds');
+    }
+    if (revertMinutes < 1 || revertMinutes > 60) {
+      throw ArgumentError(
+          'revertMinutes must be 1..60 for LOCK, got $revertMinutes');
+    }
+    return _runWizardCommand(
+      imei: imei,
+      pathSuffix: 'lock',
+      body: {
+        'intervalSeconds': intervalSeconds,
+        'revertMinutes': revertMinutes,
+      },
       queueMs: queueMs,
     );
   }
@@ -451,7 +522,7 @@ class ProvisioningApi {
     if (homeSsid != null) body['homeSsid'] = homeSsid;
     final res = await _http.post(
       Uri.parse('$baseUrl/devices/$imei/home-setup'),
-      headers: _headers,
+      headers: await _authHeaders(),
       body: jsonEncode(body),
     );
     final json = _decodeOrThrow(res, op: 'postHomeSetup');
@@ -466,7 +537,7 @@ class ProvisioningApi {
   }) async {
     final res = await _http.get(
       Uri.parse('$baseUrl/devices/$imei/home-setup'),
-      headers: _headers,
+      headers: await _authHeaders(),
     );
     if (res.statusCode == 404) return null;
     final json = _decodeOrThrow(res, op: 'getActiveHomeSetupIntent');
@@ -483,7 +554,7 @@ class ProvisioningApi {
   }) async {
     final res = await _http.get(
       Uri.parse('$baseUrl/devices/$imei/home-setup/latest'),
-      headers: _headers,
+      headers: await _authHeaders(),
     );
     if (res.statusCode == 404) return null;
     final json = _decodeOrThrow(res, op: 'getLatestHomeSetupIntent');
@@ -498,7 +569,7 @@ class ProvisioningApi {
   }) async {
     final res = await _http.get(
       Uri.parse('$baseUrl/devices/$imei/home-setup/$intentId'),
-      headers: _headers,
+      headers: await _authHeaders(),
     );
     if (res.statusCode == 404) return null;
     final json = _decodeOrThrow(res, op: 'getHomeSetupIntent');
@@ -513,7 +584,7 @@ class ProvisioningApi {
   }) async {
     final res = await _http.delete(
       Uri.parse('$baseUrl/devices/$imei/home-setup/$intentId'),
-      headers: _headers,
+      headers: await _authHeaders(),
     );
     if (res.statusCode == 404 || res.statusCode == 409) return null;
     final json = _decodeOrThrow(res, op: 'cancelHomeSetup');
