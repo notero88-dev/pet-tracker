@@ -112,6 +112,21 @@
 	     cert. iOS ATS defaults are honored — no plaintext, no self-
 	     signed cert, no IP-pinned exception. -->
 
+	<!-- ─── Export compliance ────────────────────────────────────── -->
+	<!-- TLS is the only "encryption" the app uses (HTTPS to
+	     api.mybesti.co + APNs/FCM push). That qualifies for the
+	     §740.17(b)(1) BIS export-compliance exemption ("ancillary use
+	     of cryptography"). Declaring it here lets Apple flag every
+	     TestFlight + App Store build as exempt automatically, so we
+	     don't have to upload an export-compliance document for every
+	     release. If we ever add real cryptography (custom symmetric
+	     ciphers, end-to-end-encrypted messaging, etc.), flip this to
+	     <true/> and fill out the export-compliance questionnaire in
+	     App Store Connect → App Information → Encryption Export
+	     Compliance. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
 	<!-- ─── Google Sign-In OAuth callback URL scheme ─────────────── -->
 	<!-- Required by the `google_sign_in` iOS plugin. The string below is
 	     the REVERSED_CLIENT_ID from GoogleService-Info.plist. After the
