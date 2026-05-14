@@ -69,6 +69,8 @@ class CuentaTab extends StatelessWidget {
               const SliverToBoxAdapter(child: _SoporteCard()),
               const SliverToBoxAdapter(child: _SectionHeader('Legal')),
               const SliverToBoxAdapter(child: _LegalCard()),
+              const SliverToBoxAdapter(child: _SectionHeader('Cuenta', topPad: 24)),
+              const SliverToBoxAdapter(child: _CuentaDangerCard()),
               const SliverToBoxAdapter(child: SizedBox(height: 24)),
             ],
           );
@@ -834,14 +836,14 @@ class _LegalCard extends StatelessWidget {
               icon: Icons.description_outlined,
               iconColor: PettiColors.midnight,
               label: 'Términos y condiciones',
-              onTap: () => _openUrl('https://pettrack.co/terms'),
+              onTap: () => _openUrl('https://mybesti.co/terms'),
               external: true,
             ),
             _RowItem(
               icon: Icons.shield_outlined,
               iconColor: PettiColors.midnight,
               label: 'Política de privacidad',
-              onTap: () => _openUrl('https://pettrack.co/privacy'),
+              onTap: () => _openUrl('https://mybesti.co/privacy'),
               external: true,
               isLast: true,
             ),
@@ -860,6 +862,10 @@ class _RowItem extends StatelessWidget {
   final bool chevron;
   final bool external;
   final bool isLast;
+  // `dangerous` switches the label color to the same muted red as the
+  // icon — used for the "Eliminar cuenta" row to signal destructive
+  // intent without screaming. Doesn't affect chevron / sub color.
+  final bool dangerous;
   final VoidCallback? onTap;
   const _RowItem({
     required this.icon,
@@ -869,6 +875,7 @@ class _RowItem extends StatelessWidget {
     this.chevron = false,
     this.external = false,
     this.isLast = false,
+    this.dangerous = false,
     this.onTap,
   });
 
@@ -903,11 +910,13 @@ class _RowItem extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Inter',
                       fontSize: 14.5,
                       fontWeight: FontWeight.w500,
-                      color: PettiColors.midnight,
+                      color: dangerous
+                          ? const Color(0xFFC0382B)
+                          : PettiColors.midnight,
                       letterSpacing: -0.005 * 14.5,
                     ),
                   ),
@@ -967,5 +976,242 @@ Future<void> _openUrl(String url) async {
   final uri = Uri.parse(url);
   if (await canLaunchUrl(uri)) {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Cuenta — danger zone with the in-app account-deletion entry point.
+//
+// Apple App Store Guideline 5.1.1(v), in force since June 2022:
+//   "Apps that support account creation must let people delete their
+//    account from within the app."
+//
+// The row label uses muted red typography to signal "danger" without
+// looking like an error toast. The actual destructive confirmation
+// happens in a modal that requires password re-entry — both because
+// Firebase's `currentUser.delete()` requires recent auth (otherwise
+// throws auth/requires-recent-login), and because asking the user to
+// type their password is a useful "are you sure?" friction.
+// -----------------------------------------------------------------------------
+
+class _CuentaDangerCard extends StatelessWidget {
+  const _CuentaDangerCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: PettiColors.borderLight),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        child: _RowItem(
+          icon: Icons.delete_outline_rounded,
+          iconColor: const Color(0xFFC0382B), // muted red
+          label: 'Eliminar cuenta',
+          sub: 'Borra tu cuenta, mascota y todo el historial',
+          dangerous: true,
+          onTap: () => _showDeleteAccountDialog(context),
+          isLast: true,
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showDeleteAccountDialog(BuildContext context) async {
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const _DeleteAccountDialog(),
+  );
+}
+
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _passwordCtrl = TextEditingController();
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _passwordCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final pwd = _passwordCtrl.text;
+    if (pwd.isEmpty) {
+      setState(() => _error = 'Ingresa tu contraseña para confirmar.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final result = await auth.deleteAccount(password: pwd);
+    if (!mounted) return;
+    if (result == null) {
+      // Success — the AuthProvider already signed out, which will
+      // trigger the auth state listener at the root of the app to
+      // navigate back to the login screen. Just dismiss the dialog.
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        _busy = false;
+        _error = result;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text(
+        'Eliminar cuenta',
+        style: TextStyle(
+          fontFamily: 'Space Grotesk',
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: PettiColors.midnight,
+          letterSpacing: -0.01 * 20,
+        ),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Esta acción es permanente y no se puede deshacer. '
+            'Se eliminarán:',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 14,
+              height: 1.4,
+              color: PettiColors.midnight,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: Text(
+              '• Tu cuenta\n'
+              '• Tu mascota y su perfil\n'
+              '• Todo el historial de ubicaciones\n'
+              '• La configuración de Zona de casa',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 13,
+                height: 1.5,
+                color: PettiColors.trail,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Por seguridad, escribe tu contraseña actual para confirmar.',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 13,
+              height: 1.4,
+              color: PettiColors.trail,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passwordCtrl,
+            obscureText: true,
+            autofocus: true,
+            enabled: !_busy,
+            decoration: InputDecoration(
+              hintText: 'Contraseña',
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: PettiColors.borderLight),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: PettiColors.borderLight),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: PettiColors.marigold, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+            onSubmitted: (_) => _busy ? null : _submit(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _error!,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 13,
+                color: Color(0xFFC0382B),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.of(context).pop(),
+          style: TextButton.styleFrom(
+            foregroundColor: PettiColors.trail,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          ),
+          child: const Text(
+            'Cancelar',
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _submit,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFFC0382B),
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: _busy
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(Colors.white),
+                  ),
+                )
+              : const Text(
+                  'Eliminar permanentemente',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+        ),
+      ],
+    );
   }
 }

@@ -143,6 +143,37 @@ class ProvisioningApi {
     }
   }
 
+  /// Delete the currently-signed-in user's account server-side.
+  ///
+  /// Triggered from the Cuenta → Eliminar cuenta flow (Apple App Store
+  /// Guideline 5.1.1(v) — accounts must be deletable from inside the
+  /// app). The backend cascades: soft-deletes Postgres customer + pets
+  /// + geofences, cancels subscriptions, hard-deletes the Traccar user
+  /// (releases the device), and hard-deletes the Firebase Auth user.
+  ///
+  /// After this returns true the client should sign out — the Firebase
+  /// session is invalid anyway because the user was deleted.
+  ///
+  /// Returns false on any non-200; caller surfaces an error toast.
+  Future<bool> deleteAccount() async {
+    try {
+      final response = await _http.delete(
+        Uri.parse('$baseUrl/users/me'),
+        headers: await _authHeaders(),
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        return true;
+      }
+      // ignore: avoid_print
+      print('deleteAccount: HTTP ${response.statusCode} body=${response.body}');
+      return false;
+    } catch (e) {
+      // ignore: avoid_print
+      print('deleteAccount failed: $e');
+      return false;
+    }
+  }
+
   // Temporary storage for last provisioned credentials
   Map<String, dynamic>? _lastProvisionedCredentials;
   
