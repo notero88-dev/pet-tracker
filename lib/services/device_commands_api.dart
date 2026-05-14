@@ -75,16 +75,12 @@ String _modeTypeString(TrackingMode m) {
 
 class DeviceCommandsApi {
   final String baseUrl;
-  final String apiKey;
   final http.Client _client;
 
   DeviceCommandsApi({
     String? baseUrl,
-    String? apiKey,
     http.Client? client,
   })  : baseUrl = baseUrl ?? AppConstants.provisioningApiUrl,
-        apiKey = apiKey ??
-            'pt_prod_427cce864697e6469353e02b9495e32427e266033f93049c54b26ef632a71c92',
         _client = client ?? http.Client();
 
   // -----------------------------------------------------------------
@@ -152,23 +148,19 @@ class DeviceCommandsApi {
   // Internal
   // -----------------------------------------------------------------
 
-  /// Build auth headers. Mirrors ProvisioningApi._authHeaders — see that
-  /// doc for the Phase B / Phase C migration story. The Firebase ID
-  /// token is preferred by the backend; the legacy `apiKey` field
-  /// remains as a fall-through path for one ship cycle and is dropped
-  /// alongside the backend's API_KEY rotation in Phase C.
+  /// Build auth headers. Mirrors ProvisioningApi._authHeaders — see
+  /// that doc for the Phase B / Phase C migration story. Phase C
+  /// (2026-05-13): legacy `x-api-key` removed; Bearer is now the only
+  /// supported auth.
   Future<Map<String, String>> _authHeaders() async {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-    };
+    final headers = <String, String>{'Content-Type': 'application/json'};
     try {
       final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
       }
     } catch (_) {
-      // Token fetch failed — fall through with API key only.
+      // Token fetch failed — server 401s.
     }
     return headers;
   }

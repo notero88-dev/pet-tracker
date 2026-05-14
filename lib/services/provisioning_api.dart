@@ -10,42 +10,28 @@ class ProvisioningApi {
   final String baseUrl = AppConstants.provisioningApiUrl;
   final http.Client _http;
 
-  // Legacy production API key (from backend deployment).
-  //
-  // Phase B (2026-05-13): kept as a fall-through path while the backend
-  // is in "either auth path accepted" mode. Every authenticated request
-  // ALSO sends a Firebase ID token via Authorization: Bearer — when both
-  // are present the server uses the Bearer token and ignores this key,
-  // and the legacy-path warning log stays silent.
-  //
-  // Phase C removes this constant entirely; the backend rotates API_KEY
-  // on the same ship so old builds can't accidentally still authenticate.
-  static const String _apiKey = 'pt_prod_427cce864697e6469353e02b9495e32427e266033f93049c54b26ef632a71c92';
-
   ProvisioningApi({http.Client? httpClient})
       : _http = httpClient ?? http.Client();
 
   /// Build auth headers. Async because we have to ask Firebase for a
   /// fresh ID token (it's auto-refreshed by the SDK; we don't cache).
   ///
-  /// Includes BOTH `Authorization: Bearer <token>` (when signed in) AND
-  /// the legacy `x-api-key` during Phase B. The server prefers Bearer
-  /// when present. If the user isn't signed in we fall back to API key
-  /// only — only pre-login flows would hit that path, and none of our
-  /// authenticated endpoints get called pre-login today.
+  /// Phase C (2026-05-13): backend now requires `Authorization: Bearer
+  /// [firebase_id_token]`. The legacy `x-api-key` path was removed
+  /// from this client and rotated on the server simultaneously. If
+  /// `getIdToken()` returns null (user not signed in), the request
+  /// will 401 on the server — which is the correct behavior since
+  /// every endpoint here requires an authenticated user.
   Future<Map<String, String>> _authHeaders() async {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-      'x-api-key': _apiKey,
-    };
+    final headers = <String, String>{'Content-Type': 'application/json'};
     try {
       final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
       }
     } catch (_) {
-      // Token fetch failed (offline, expired session, etc.). Fall through
-      // with x-api-key only — the legacy path still works during Phase B.
+      // Token fetch failed. Send no Authorization header; server 401s.
+      // Caller decides whether to retry / re-auth.
     }
     return headers;
   }

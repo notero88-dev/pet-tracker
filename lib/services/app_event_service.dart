@@ -25,28 +25,19 @@ import '../utils/constants.dart';
 class AppEventService {
   AppEventService._();
 
-  // Legacy API key — kept as fall-through during Phase B of the auth
-  // refactor. Phase C removes it. See provisioning_api.dart for full
-  // story.
-  static const String _apiKey =
-      'pt_prod_427cce864697e6469353e02b9495e32427e266033f93049c54b26ef632a71c92';
-
   static http.Client _http = http.Client();
 
-  /// Auth headers — mirrors ProvisioningApi._authHeaders. Bearer
-  /// when signed in, plus the legacy x-api-key. Server prefers Bearer.
+  /// Auth headers. Phase C (2026-05-13): legacy x-api-key removed;
+  /// Bearer-only. See ProvisioningApi._authHeaders for full story.
   static Future<Map<String, String>> _authHeaders() async {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-      'x-api-key': _apiKey,
-    };
+    final headers = <String, String>{'Content-Type': 'application/json'};
     try {
       final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
       }
     } catch (_) {
-      // Token fetch failed — fall through with API key only.
+      // Token fetch failed — server 401s.
     }
     return headers;
   }
