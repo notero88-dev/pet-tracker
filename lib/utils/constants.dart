@@ -2,28 +2,32 @@
 class AppConstants {
   // API URLs
   //
-  // provisioning-api + push-service migrated to api.mybesti.co on
-  // 2026-05-13 (real Let's Encrypt cert via certbot --nginx; auto-
-  // renewal scheduled via certbot.timer). The raw-IP URL is kept as
-  // a one-line escape hatch in case nginx / DNS / cert breaks; flip
-  // the comment to revert.
+  // All three services served at https://api.mybesti.co behind nginx
+  // (real Let's Encrypt cert, auto-renew via certbot.timer):
+  //   /api    → provisioning-api  (port 3001)
+  //   /push   → push-service      (port 3002)
+  //   /traccar→ Traccar           (port 8082) — reverse-proxied with
+  //                                WebSocket upgrade support so the
+  //                                Flutter live-position stream uses
+  //                                wss:// instead of plaintext ws://.
   //
-  // Traccar (port 8082) stays on the IP for now — it's a separate
-  // process not behind nginx and serves HTTP, not HTTPS. Migrating
-  // Traccar requires either an nginx reverse proxy for /traccar/
-  // (TODO: separate cleanup task) or uploading the LE cert into
-  // Traccar's own config. The iOS NSAppTransportSecurity exception
-  // in Info.plist still covers this path.
-  static const String traccarBaseUrl = 'http://64.23.156.25:8082';
+  // Escape hatches below stay commented; uncomment to revert per-service
+  // back to the droplet IP if something breaks. The corresponding
+  // NSAppTransportSecurity exception in ios/Runner/Info.plist was
+  // removed once the Traccar proxy shipped; re-adding it is a one-block
+  // edit if you need to fall back temporarily.
+  static const String traccarBaseUrl = 'https://api.mybesti.co/traccar';
   static const String provisioningApiUrl = 'https://api.mybesti.co/api';
   static const String pushServiceUrl = 'https://api.mybesti.co/push';
-  // Escape hatch — uncomment to revert provisioning-api/push-service:
+  // Escape hatches (require restoring NSAppTransportSecurity exception):
+  // static const String traccarBaseUrl = 'http://64.23.156.25:8082';
   // static const String provisioningApiUrl = 'https://64.23.156.25/api';
   // static const String pushServiceUrl = 'https://64.23.156.25/push';
 
   // API Endpoints
   static String get traccarApiUrl => '$traccarBaseUrl/api';
-  static String get traccarWebSocketUrl => 'ws://64.23.156.25:8082/api/socket';
+  static String get traccarWebSocketUrl =>
+      'wss://api.mybesti.co/traccar/api/socket';
   
   // App Info
   static const String appName = 'Besti';

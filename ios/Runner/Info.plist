@@ -105,33 +105,12 @@
 		<string>fetch</string>
 	</array>
 
-	<!-- ─── App Transport Security exception (TEMPORARY) ─────────── -->
-	<!-- The backend currently uses a self-signed TLS cert at
-	     64.23.156.25. iOS ATS rejects self-signed certs in
-	     production builds by default. This exception allows the
-	     specific droplet IP only.
-
-	     ⚠️ MUST BE REMOVED before any TestFlight or App Store build.
-	     The plan: register a real domain → Let's Encrypt cert →
-	     update AppConstants.provisioningApiUrl → drop this exception.
-	     See: pettrack-backend/docs/runbooks/ios-first-build.md -->
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>64.23.156.25</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-				<key>NSIncludesSubdomains</key>
-				<false/>
-				<key>NSExceptionRequiresForwardSecrecy</key>
-				<false/>
-				<key>NSTemporaryExceptionMinimumTLSVersion</key>
-				<string>TLSv1.0</string>
-			</dict>
-		</dict>
-	</dict>
+	<!-- ─── App Transport Security ───────────────────────────────── -->
+	<!-- No exceptions needed as of 2026-05-13. All three backend
+	     services (provisioning-api, push-service, Traccar) are served
+	     at https://api.mybesti.co behind nginx with a Let's Encrypt
+	     cert. iOS ATS defaults are honored — no plaintext, no self-
+	     signed cert, no IP-pinned exception. -->
 
 	<!-- ─── Google Sign-In OAuth callback URL scheme ─────────────── -->
 	<!-- Required by the `google_sign_in` iOS plugin. The string below is
