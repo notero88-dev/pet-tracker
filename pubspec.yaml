@@ -91,7 +91,13 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   # Generates Android (legacy + adaptive) and iOS launcher icons from
   # assets/icons/besti_icon*.png. Source PNGs are produced by
-  # assets/icons/generate_besti_icon.py — see header for rationale.
+  # tools/icon-generator/generate_besti_icon.py — see header for rationale.
+  # The generator scripts live OUTSIDE assets/icons/ deliberately: Apple's
+  # code-signing validator rejects any non-code files dragged into
+  # Frameworks/App.framework/flutter_assets/ that aren't individually
+  # signed (a .py in assets/icons/ failed App Store validation on
+  # 2026-05-15 with "Code object is not signed at all"). Keeping all
+  # tooling out of assets/ prevents this entire class of issue.
   # Re-run with: dart run flutter_launcher_icons
   flutter_launcher_icons: ^0.14.2
 
