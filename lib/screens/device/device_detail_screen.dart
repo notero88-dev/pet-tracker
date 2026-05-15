@@ -32,6 +32,7 @@ import '../../models/device.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/app_event_service.dart';
+import '../../services/device_command_events.dart';
 import '../../services/provisioning_api.dart';
 import '../../services/reverse_geocoder.dart';
 import '../../services/wizard_step_result.dart';
@@ -59,6 +60,26 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   bool _isFlippingMode = false; // true while a Mode 1/8 command is in flight
   late final ProvisioningApi _api = ProvisioningApi();
 
+  // 2026-05-15 — En vivo "Bad file descriptor" fix.
+  //
+  // When the backend returns 202 'queued' (device offline at tap time —
+  // common for Mode-8 idle), we hold the spinner with a different
+  // subtitle ("Esperando al collar…") and wait for one of:
+  //
+  //   a) An FCM `command_completed` data-only push (canonical signal —
+  //      fired by gateway → provisioning-api the moment the device
+  //      reconnects and ACKs).
+  //   b) A 60s safety timeout that falls back to a "se aplicará cuando
+  //      Petti vuelva a conectar" message and clears the spinner.
+  //
+  // We never block the user behind the spinner forever: even on (b) the
+  // queued command is still in the gateway and will fire when the device
+  // reconnects; the FCM will then arrive separately and surface a banner.
+  int? _pendingQueueId;
+  Timer? _queuedTimeoutTimer;
+  StreamSubscription<CommandCompletedEvent>? _commandEventsSub;
+  static const Duration _queuedSpinnerTimeout = Duration(seconds: 60);
+
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
 
@@ -82,6 +103,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   @override
   void dispose() {
     _updateTimer?.cancel();
+    _queuedTimeoutTimer?.cancel();
+    _commandEventsSub?.cancel();
     _mapController?.dispose();
     super.dispose();
   }
@@ -262,6 +285,28 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       print('[ModeFlip] result=${result.runtimeType} $result');
       if (!mounted) return;
 
+      // 2026-05-15 — En vivo "Bad file descriptor" fix.
+      //
+      // When the device was offline at tap time, the gateway parks the
+      // LOCK for up to 4 h and returns immediately. The spinner stays
+      // (with a different subtitle); the next FCM `command_completed`
+      // for our queueId / imei flips us to "En vivo". 60s safety timer
+      // bounds the spinner so we don't hang the UI if the device stays
+      // offline forever.
+      if (result is WizardStepQueued && enabling) {
+        _pendingQueueId = result.queueId;
+        _subscribeToCommandEvents();
+        _queuedTimeoutTimer?.cancel();
+        _queuedTimeoutTimer = Timer(_queuedSpinnerTimeout, () {
+          if (!mounted) return;
+          _showQueuedFallbackMessage();
+          _clearQueuedWait(); // stops the spinner, leaves the command in flight
+        });
+        // Don't show success yet — keep _isFlippingMode true to hold the
+        // spinner. _clearQueuedWait() or the FCM event resets it.
+        return;
+      }
+
       if (result is! WizardStepOk) {
         _showModeFlipError(result, enabling);
         return;
@@ -278,8 +323,105 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       }
       _showModeFlipSuccess(enabling);
     } finally {
-      if (mounted) setState(() => _isFlippingMode = false);
+      // For the queued branch we hold _isFlippingMode=true until the
+      // event lands or the safety timer fires. Only the synchronous
+      // success/error paths clear it here.
+      if (mounted && _pendingQueueId == null) {
+        setState(() => _isFlippingMode = false);
+      }
     }
+  }
+
+  /// Start listening for command-completion FCM events. Idempotent.
+  /// Caller must have set [_pendingQueueId] first.
+  void _subscribeToCommandEvents() {
+    _commandEventsSub?.cancel();
+    _commandEventsSub =
+        DeviceCommandEvents.instance.stream.listen(_onCommandEvent);
+  }
+
+  /// React to a `command_completed` FCM. Filters on our IMEI + (if
+  /// available) queueId. Anything else is for a different screen/flow.
+  void _onCommandEvent(CommandCompletedEvent event) {
+    if (!mounted) return;
+    if (event.imei != widget.device.uniqueId) return;
+    if (event.command != 'lock') return;
+    // If we have a specific queueId, prefer that as the discriminant.
+    // If the FCM didn't carry one (legacy), fall back to imei+command.
+    if (_pendingQueueId != null &&
+        event.queueId != null &&
+        event.queueId != _pendingQueueId) {
+      return;
+    }
+    if (event.isSuccess) {
+      _onQueuedCommandSucceeded();
+    } else {
+      _onQueuedCommandFailed(event);
+    }
+  }
+
+  /// FCM said the queued LOCK acked. Flip UI to "En vivo" same as the
+  /// synchronous-success path would have.
+  void _onQueuedCommandSucceeded() {
+    _clearQueuedWait();
+    setState(() {
+      _isLiveMode = true;
+      _isFlippingMode = false;
+    });
+    _startLiveUpdates();
+    final traccar = Provider.of<TraccarProvider>(context, listen: false);
+    if (widget.device.traccarId != null) {
+      traccar.requestPositionNow(widget.device.traccarId!);
+    }
+    _showModeFlipSuccess(true);
+  }
+
+  /// FCM said the queued LOCK failed / expired / timed out. Clear the
+  /// spinner and surface a clear error.
+  void _onQueuedCommandFailed(CommandCompletedEvent event) {
+    _clearQueuedWait();
+    if (!mounted) return;
+    setState(() => _isFlippingMode = false);
+    final petName = event.petName.isNotEmpty ? event.petName : 'Petti';
+    final message = switch (event.status) {
+      'expired' =>
+        'No alcanzamos a contactar a $petName a tiempo. Inténtalo de nuevo cuando vuelva a conectar.',
+      'failed' => '$petName rechazó el cambio de modo. Inténtalo de nuevo.',
+      'timeout' => '$petName no respondió a tiempo. Inténtalo de nuevo.',
+      _ => 'No pudimos activar En vivo. Inténtalo de nuevo.',
+    };
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: PettiColors.alert,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 6),
+    ));
+  }
+
+  void _clearQueuedWait() {
+    _queuedTimeoutTimer?.cancel();
+    _queuedTimeoutTimer = null;
+    _commandEventsSub?.cancel();
+    _commandEventsSub = null;
+    _pendingQueueId = null;
+  }
+
+  /// 60s safety message: command is still queued backend-side but we
+  /// release the spinner so the UI isn't held hostage. The FCM (if
+  /// permissions granted) will still fire later when the device
+  /// reconnects, surfacing a banner that flips state then.
+  void _showQueuedFallbackMessage() {
+    if (!mounted) return;
+    setState(() => _isFlippingMode = false);
+    final petName = widget.device.name.isNotEmpty ? widget.device.name : 'Petti';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        'Aplicaremos En vivo cuando $petName vuelva a conectar. Te avisaremos.',
+      ),
+      backgroundColor: PettiColors.midnight,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 6),
+    ));
   }
 
   Future<bool> _confirmModeFlip(bool enabling) async {
@@ -669,6 +811,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   child: _BuscarPrimaryButton(
                     isLive: _isLiveMode,
                     isLoading: _isFlippingMode,
+                    isAwaitingDevice: _pendingQueueId != null,
                     petName: widget.device.name,
                     onTap: _isFlippingMode ? null : _toggleLiveMode,
                   ),
@@ -919,12 +1062,19 @@ class _BuscarPrimaryButton extends StatelessWidget {
   final bool isLoading;
   final String petName; // kept for analytics/event firing; not rendered
   final VoidCallback? onTap;
+  /// When true the device was offline at tap time and the LOCK is parked
+  /// on the gateway waiting for reconnect. The button shows
+  /// "Esperando al collar…" instead of "Cambiando…" so the user knows
+  /// we're not stuck on the network, we're stuck on the device.
+  /// Shipped 2026-05-15 alongside the 202-queued / FCM-completion fix.
+  final bool isAwaitingDevice;
 
   const _BuscarPrimaryButton({
     required this.isLive,
     required this.isLoading,
     required this.petName,
     required this.onTap,
+    this.isAwaitingDevice = false,
   });
 
   @override
@@ -975,7 +1125,9 @@ class _BuscarPrimaryButton extends StatelessWidget {
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
-                  isLoading ? 'Cambiando…' : 'En vivo',
+                  isAwaitingDevice
+                      ? 'Esperando al collar…'
+                      : (isLoading ? 'Cambiando…' : 'En vivo'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(

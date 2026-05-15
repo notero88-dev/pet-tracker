@@ -196,4 +196,66 @@ void main() {
       expect((result as WizardStepDeviceRejected).payload, 'MODE,FS');
     });
   });
+
+  // Shipped 2026-05-15 — when device is offline at tap time, backend now
+  // returns 202 'queued' with queueId + ttlMs instead of holding the
+  // connection open. App maps this to WizardStepQueued. See KANBAN row
+  // tracking the "En vivo Bad file descriptor" fix.
+  group('ProvisioningApi 202 queued response', () {
+    test('lockMode returns WizardStepQueued on 202 with queueId + ttlMs',
+        () async {
+      final mockClient = MockClient((req) async {
+        expect(req.method, 'POST');
+        expect(req.url.path, contains('/devices/123456789012345/lock'));
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'status': 'queued',
+            'queueId': 42,
+            'ttlMs': 14400000,
+          }),
+          202,
+        );
+      });
+
+      final api = ProvisioningApi(httpClient: mockClient);
+      final result = await api.lockMode(
+        imei: '123456789012345',
+        intervalSeconds: 10,
+        revertMinutes: 5,
+      );
+
+      expect(result, isA<WizardStepQueued>());
+      expect((result as WizardStepQueued).queueId, 42);
+      expect(result.ttlMs, 14400000);
+    });
+
+    test('falls through to WizardStepFailed on 202 without status=queued',
+        () async {
+      final mockClient = MockClient((_) async => http.Response(
+            jsonEncode({'success': false, 'error': 'something else'}),
+            202,
+          ));
+      final api = ProvisioningApi(httpClient: mockClient);
+      final result = await api.lockMode(imei: '123456789012345');
+      expect(result, isA<WizardStepFailed>());
+    });
+
+    test('setModeHome also handles 202 queued (the path is shared)', () async {
+      final mockClient = MockClient((_) async => http.Response(
+            jsonEncode({
+              'success': true,
+              'status': 'queued',
+              'queueId': 7,
+              'ttlMs': 172800000,
+            }),
+            202,
+          ));
+      final api = ProvisioningApi(httpClient: mockClient);
+      final result =
+          await api.setModeHome(imei: '123456789012345', intervalSeconds: 30);
+      expect(result, isA<WizardStepQueued>());
+      expect((result as WizardStepQueued).queueId, 7);
+    });
+  });
 }

@@ -39,6 +39,7 @@ import '../providers/notification_provider.dart';
 import '../screens/alerts/alert_detail_screen.dart';
 import '../utils/app_navigator.dart';
 import '../widgets/petti/petti_alert_banner.dart';
+import 'device_command_events.dart';
 import 'firestore_service.dart';
 import 'provisioning_api.dart';
 
@@ -220,6 +221,17 @@ class FCMService {
   /// FCM arrived while app is in foreground. Persist + show in-app banner.
   void _handleForeground(RemoteMessage message) {
     debugPrint('FCM foreground: ${message.messageId}');
+
+    // Silent system signals (data-only, no notification block, type marks
+    // them as internal). These don't go to the alert list or banner —
+    // they emit on a side-channel for whatever screen is interested.
+    // Shipped 2026-05-15 alongside the 202/queued + completion-webhook
+    // chain that fixes the "En vivo Bad file descriptor" failure.
+    if (_isSystemSignal(message)) {
+      _routeSystemSignal(message);
+      return;
+    }
+
     final notification = _buildNotificationFromMessage(message);
     if (notification == null) return;
 
@@ -244,6 +256,17 @@ class FCMService {
   /// Push the AlertDetailScreen.
   void _handleTap(RemoteMessage message) {
     debugPrint('FCM tap: ${message.messageId}');
+
+    // System signals shouldn't ever surface a tappable notification (we
+    // send them as data-only with no alert block), but if iOS somehow
+    // surfaces one anyway, route it through the signal handler so we
+    // at least update internal state instead of falling into the
+    // AlertDetailScreen with a meaningless payload.
+    if (_isSystemSignal(message)) {
+      _routeSystemSignal(message);
+      return;
+    }
+
     final notification = _buildNotificationFromMessage(message);
     if (notification == null) return;
 
@@ -253,6 +276,57 @@ class FCMService {
     notificationProvider?.addNotification(notification);
 
     _navigateToDetail(notification);
+  }
+
+  /// Is this RemoteMessage one of our internal system-signal types
+  /// (currently just `command_completed`)? System signals get routed
+  /// out-of-band via [DeviceCommandEvents] rather than into the user-
+  /// facing notification list.
+  bool _isSystemSignal(RemoteMessage message) {
+    final t = message.data['type'] as String?;
+    return t == 'command_completed';
+  }
+
+  /// Convert a `command_completed` data-only push into a typed
+  /// CommandCompletedEvent and emit it. Whatever screen is interested
+  /// (DeviceDetailScreen's live-mode button today) subscribes to
+  /// DeviceCommandEvents.instance.stream and reacts.
+  void _routeSystemSignal(RemoteMessage message) {
+    final data = message.data;
+    final type = data['type'] as String?;
+    if (type != 'command_completed') {
+      debugPrint('FCM: unknown system signal type=$type, ignoring');
+      return;
+    }
+    final imei = (data['imei'] as String?) ?? '';
+    final command = (data['command'] as String?) ?? '';
+    final status = (data['status'] as String?) ?? '';
+    if (imei.isEmpty || command.isEmpty || status.isEmpty) {
+      debugPrint('FCM: command_completed missing imei/command/status, dropping');
+      return;
+    }
+    final queueIdStr = (data['queueId'] as String?) ?? '';
+    final queueId = int.tryParse(queueIdStr);
+    final payload =
+        (data['payload'] as String?)?.isNotEmpty == true
+            ? data['payload'] as String?
+            : null;
+    final firedAtStr = (data['firedAt'] as String?) ?? '';
+    final firedAt = DateTime.tryParse(firedAtStr) ?? DateTime.now();
+    final petName = (data['petName'] as String?) ?? '';
+    debugPrint(
+      'FCM command_completed: imei=$imei command=$command '
+      'queueId=$queueId status=$status',
+    );
+    DeviceCommandEvents.instance.emit(CommandCompletedEvent(
+      imei: imei,
+      command: command,
+      queueId: queueId,
+      status: status,
+      payload: payload,
+      firedAt: firedAt,
+      petName: petName,
+    ));
   }
 
   /// Push AlertDetailScreen via the global navigator key. Safe to call

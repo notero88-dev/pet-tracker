@@ -17,6 +17,30 @@ class WizardStepOk extends WizardStepResult {
   const WizardStepOk(this.payload);
 }
 
+/// Backend returned `202 { success: true, status: 'queued', queueId, ttlMs }`
+/// — shipped 2026-05-15 to fix the "Bad file descriptor" failure where
+/// offline-device LOCK commands were hanging long enough for the user's
+/// cell network handoff to kill the HTTP socket. The gateway now parks
+/// the command for up to [ttlMs] awaiting device reconnect and replies
+/// with this immediate ack. The caller should:
+///
+///   1. Update its UI to "Esperando al collar..." (or equivalent)
+///   2. Either poll `/devices/:imei/state` for the eventual mode change
+///      AND/OR wait for the `command_completed` FCM data-only push
+///   3. Time out gracefully after ttlMs if nothing arrives (rare —
+///      production TTL is 4 h to 48 h).
+class WizardStepQueued extends WizardStepResult {
+  /// Gateway-assigned id. Useful for correlating with the eventual
+  /// `command_completed` FCM message (`data.queueId`).
+  final int? queueId;
+
+  /// How long the command will wait for the device before the backend
+  /// gives up. Today (2026-05-15) the server default is 4 h with a 48 h
+  /// hard cap.
+  final int ttlMs;
+  const WizardStepQueued({this.queueId, required this.ttlMs});
+}
+
 /// Backend returned `408 — queued command expired before device
 /// reconnected`. The wizard should ask the user to physically wake
 /// the device (motion / take outdoors) before retrying.

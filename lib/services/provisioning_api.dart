@@ -328,6 +328,26 @@ class ProvisioningApi {
             (json['error'] ?? 'unexpected 200 body').toString(),
             statusCode: 200,
           );
+        case 202:
+          // 2026-05-15 — gateway parked the command for offline-reconnect.
+          // The command will eventually fire when the device wakes; the
+          // caller updates UI to "Esperando..." and waits for an FCM
+          // `command_completed` push (or polls /state). See KANBAN row
+          // tracking the "En vivo Bad file descriptor" fix.
+          if (json['success'] == true && json['status'] == 'queued') {
+            return WizardStepQueued(
+              queueId: json['queueId'] is int
+                  ? json['queueId'] as int
+                  : int.tryParse('${json['queueId']}'),
+              ttlMs: json['ttlMs'] is int
+                  ? json['ttlMs'] as int
+                  : queueMs,
+            );
+          }
+          return WizardStepFailed(
+            (json['error'] ?? 'unexpected 202 body').toString(),
+            statusCode: 202,
+          );
         case 408:
           final ttl = (json['queueTtlMs'] is int) ? json['queueTtlMs'] as int : queueMs;
           return WizardStepQueueExpired(ttl);
