@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:ui';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -15,18 +19,25 @@ import 'providers/auth_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/traccar_provider.dart';
 import 'screens/splash_screen.dart';
+import 'services/app_event_service.dart';
 import 'services/fcm_service.dart';
 import 'utils/app_navigator.dart';
 import 'utils/petti_theme.dart';
 
-/// Accept the droplet's self-signed TLS certificate in debug builds ONLY.
+/// Accept the droplet's self-signed TLS certificate.
 ///
 /// The droplet at 64.23.156.25 currently serves HTTPS with a self-signed
 /// cert (no domain → no Let's Encrypt yet, see PLAN.md Epic 6). Without
-/// this override the Flutter HTTP client refuses the connection. Gated
-/// strictly on kDebugMode so production / release builds enforce normal
-/// certificate validation. The override is also restricted to the known
-/// droplet IP — any other host with a bad cert is still rejected.
+/// this override the Flutter HTTP client refuses the connection.
+///
+/// Originally gated on kDebugMode, but the gate was removed so release
+/// builds can also reach the droplet during personal dogfooding
+/// (Petti/2026-05-06 — symptom: CERTIFICATE_VERIFY_FAILED when tapping
+/// the Mode 8 toggle button). The host-allowlist inside the override
+/// limits the bypass to 64.23.156.25 only — any other host with a bad
+/// cert is still rejected. Re-add the kDebugMode gate (and prefer the
+/// proper TLS-cert path) once the droplet has Let's Encrypt on a real
+/// domain (api.petti.co per the iOS runbook's TLS section).
 class _DropletSelfSignedOverrides extends HttpOverrides {
   static const _allowedHosts = {'64.23.156.25'};
 
@@ -40,26 +51,87 @@ class _DropletSelfSignedOverrides extends HttpOverrides {
 }
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // The whole startup runs inside runZonedGuarded so any uncaught async
+  // error anywhere in the app flows to Crashlytics. The four handlers
+  // wired below cover the four error surfaces Flutter exposes:
+  //
+  //   1. FlutterError.onError              — synchronous framework errors
+  //                                          (widget build, paint, layout)
+  //   2. PlatformDispatcher.instance.onError — uncaught engine errors
+  //                                          (asyncs that bubble past
+  //                                          the Flutter framework)
+  //   3. Isolate error listener            — errors in background isolates
+  //                                          (compute(), spawned isolates)
+  //   4. runZonedGuarded outer catch       — async errors in dart:io,
+  //                                          timers, etc. that bypass
+  //                                          the dispatcher
+  //
+  // Crashlytics collection is disabled in debug builds to keep the
+  // Firebase Console clean of dev-time crashes (Flutter hot-reload
+  // intentionally crashes-and-restarts a lot).
+  await runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Self-signed cert acceptance — debug builds against our own droplet only.
-  // See _DropletSelfSignedOverrides for the gating logic.
-  if (kDebugMode) {
+    // Self-signed cert acceptance for our own droplet at 64.23.156.25.
+    // Applies to both debug and release until the droplet has a Let's
+    // Encrypt cert on a real domain. See _DropletSelfSignedOverrides for
+    // the host-allowlist scope.
     HttpOverrides.global = _DropletSelfSignedOverrides();
-  }
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
 
-  // Register the FCM background message handler BEFORE runApp so it's
-  // wired in time for messages that arrive during cold start. The handler
-  // itself does minimal work today — the OS shows the notification, and
-  // FCMService.initialize()'s getInitialMessage() takes over once the
-  // app has booted.
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    // Crashlytics — disable in debug so hot-reload crashes don't spam
+    // the Firebase Console. Release builds collect.
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
+      !kDebugMode,
+    );
 
-  runApp(const PetTrackApp());
+    // Surface (1): synchronous Flutter framework errors. recordFlutterError
+    // marks them as fatal=false (they don't crash the app but should be
+    // reported); recordFlutterFatalError would mark them fatal=true.
+    // For production we want all of them visible — non-fatal still shows
+    // in the Crashlytics dashboard with the same stack trace + breadcrumbs.
+    FlutterError.onError = (FlutterErrorDetails details) {
+      FlutterError.presentError(details);
+      FirebaseCrashlytics.instance.recordFlutterError(details);
+    };
+
+    // Surface (2): uncaught engine-level async errors.
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    // Surface (3): background isolate errors. RawReceivePort routes them
+    // to a closure that hands them to Crashlytics. The cast to List is
+    // because Isolate.errors yields [error, stack] pairs as dynamic.
+    Isolate.current.addErrorListener(
+      RawReceivePort((dynamic pair) async {
+        final list = pair as List<dynamic>;
+        await FirebaseCrashlytics.instance.recordError(
+          list.first,
+          list.last is StackTrace ? list.last as StackTrace : null,
+          fatal: true,
+        );
+      }).sendPort,
+    );
+
+    // Register the FCM background message handler BEFORE runApp so it's
+    // wired in time for messages that arrive during cold start. The handler
+    // itself does minimal work today — the OS shows the notification, and
+    // FCMService.initialize()'s getInitialMessage() takes over once the
+    // app has booted.
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+    runApp(const PetTrackApp());
+  }, (error, stack) {
+    // Surface (4): anything else uncaught inside the zone — async errors
+    // outside the dispatcher (dart:io exceptions in timers, compute()
+    // failures, etc.).
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+  });
 }
 
 class PetTrackApp extends StatefulWidget {
@@ -69,13 +141,30 @@ class PetTrackApp extends StatefulWidget {
   State<PetTrackApp> createState() => _PetTrackAppState();
 }
 
-class _PetTrackAppState extends State<PetTrackApp> {
+class _PetTrackAppState extends State<PetTrackApp> with WidgetsBindingObserver {
   late final NotificationProvider _notificationProvider;
   final FCMService _fcm = FCMService();
+
+  // Debounce app_opened so lock/unlock spam doesn't inflate session count.
+  // Plan: pettrack-backend/docs/plans/2026-05-12-debug-dashboard.md.
+  static const Duration _appOpenDebounce = Duration(seconds: 60);
+  DateTime? _lastAppOpenedAt;
+
+  void _maybeFireAppOpened() {
+    final now = DateTime.now();
+    if (_lastAppOpenedAt != null &&
+        now.difference(_lastAppOpenedAt!) < _appOpenDebounce) {
+      return;
+    }
+    _lastAppOpenedAt = now;
+    AppEventService.fire('app_opened');
+  }
 
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
 
     // Build the NotificationProvider eagerly so the FCM service can hand
     // it inbound messages (and so `bell badge` updates the moment a push
@@ -89,7 +178,23 @@ class _PetTrackAppState extends State<PetTrackApp> {
     // before-runApp race.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fcm.initialize(notificationProvider: _notificationProvider);
+      // First app_opened on cold start. Pre-login is fine — the backend
+      // accepts userId='anon' for unauthenticated launches.
+      _maybeFireAppOpened();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _maybeFireAppOpened();
+    }
   }
 
   @override
@@ -109,7 +214,7 @@ class _PetTrackAppState extends State<PetTrackApp> {
         Provider<FCMService>.value(value: _fcm),
       ],
       child: MaterialApp(
-        title: 'Petti',
+        title: 'Besti',
         theme: PettiTheme.lightTheme,
         debugShowCheckedModeBanner: false,
         // These keys let FCM handlers (which run outside the widget tree)

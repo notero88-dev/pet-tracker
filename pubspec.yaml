@@ -16,6 +16,13 @@ dependencies:
   firebase_storage: ^12.3.8
   firebase_messaging: ^15.1.7
   cloud_firestore: ^5.6.0
+  # Production crash reporting. main.dart wires Flutter framework
+  # errors, async errors (runZonedGuarded), platform-dispatcher errors,
+  # and isolate errors all into Crashlytics. iOS dSYMs are uploaded
+  # automatically by the Firebase Run Script build phase the plugin
+  # installs into the Xcode project. See docs/runbooks/app-store-review.md
+  # — flips "Datos de errores" to ✅ in the privacy nutrition labels.
+  firebase_crashlytics: ^4.3.0
 
   # OAuth — Sign in with Google + Apple. Both required if any third-party
   # SSO is offered on iOS (App Store rule 4.8). Apple uses the native iOS
