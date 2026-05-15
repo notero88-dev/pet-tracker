@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  PrivacyInfo.xcprivacy — Besti app's privacy manifest.
+
+  Required by Apple for App Store / TestFlight submission since
+  iOS 17 (effective May 1, 2024). Apple aggregates this file with
+  the privacy manifests bundled inside every third-party SDK we
+  link (Firebase, Google Maps, etc. — each Pods/.../PrivacyInfo.xcprivacy
+  declares its own). Our file covers what THIS app collects and
+  any required-reason APIs the first-party Swift code calls
+  directly. Sub-SDK API usage stays in their manifests.
+
+  Sections:
+
+    NSPrivacyTracking
+      false — Besti does not track users across apps/websites
+              owned by other companies. Firebase Analytics is
+              first-party and not "tracking" under Apple's
+              definition (per Apple's own clarification +
+              Firebase Analytics privacy doc).
+
+    NSPrivacyTrackingDomains
+      Empty — no tracking domains used.
+
+    NSPrivacyAccessedAPITypes
+      Empty — our own Runner-target Swift code (AppDelegate +
+              SceneDelegate) does not directly call any required-
+              reason API. All UserDefaults / FileTimestamp /
+              SystemBootTime / DiskSpace usage comes from
+              third-party SDKs (Flutter framework, Firebase,
+              shared_preferences_foundation, etc.) whose own
+              PrivacyInfo.xcprivacy files cover them. If we ever
+              add direct UserDefaults / file-attribute access in
+              Swift, add the matching entry here.
+
+    NSPrivacyCollectedDataTypes
+      Mirrors the 8 data types declared in App Store Connect
+      Privacy Nutrition Labels (published 2026-05-14). Each row
+      below matches one Nutrition Label entry — keep them in
+      sync. Source: KANBAN row "App Store: privacy nutrition
+      labels", docs/runbooks/app-store-review.md cheat sheet.
+
+  When updating: also update App Store Connect's App Privacy
+  questionnaire — they must match. Apple's automated check
+  cross-references the manifest against the labels at submission
+  time.
+
+  Authoring reference:
+    https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
+-->
+<plist version="1.0">
+<dict>
+
+  <key>NSPrivacyTracking</key>
+  <false/>
+
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array/>
+
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array>
+
+    <!-- Email — sign-in identifier, Firebase Auth + customers.email. -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeEmailAddress</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+
+    <!-- Name — pet owner's display name, Firestore users.name. -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeName</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+
+    <!-- Phone number — optional, customers.phone (used for support
+         contact + future SMS notifications). -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypePhoneNumber</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+
+    <!-- Photos — pet profile photo (optional), stored in Firebase
+         Storage. NSPrivacyCollectedDataTypePhotosorVideos is Apple's
+         compound type — covers both pickers. -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypePhotosorVideos</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+
+    <!-- Precise location — GPS coordinates from the MT710 collar
+         (positions table). Phone's own GPS is also captured during
+         the home-zone wizard but only stored as the home_lat/home_lng
+         geofence anchor. Both are "precise" by Apple's >100 m
+         definition. -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypePreciseLocation</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+
+    <!-- User ID — Firebase uid + Traccar userId. Linked-to-account
+         (analytics needs to dedupe by user). -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeUserID</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+        <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+      </array>
+    </dict>
+
+    <!-- Device ID — IMEI of the MT710 collar + FCM token of the
+         iPhone. Both are pseudo-anonymous device identifiers. -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeDeviceID</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+        <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+      </array>
+    </dict>
+
+    <!-- Product interaction — app_events table (app_opened, signed_in,
+         find_now_tapped, live_mode_toggled, home_setup_started/
+         completed). Used by the /admin/ debug dashboard to track
+         engagement. Tier-2 analytics; not surfaced to users. -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeProductInteraction</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+      </array>
+    </dict>
+
+    <!-- Crash data — added 2026-05-15 alongside Crashlytics wiring
+         (commit ec7d898; all four error surfaces routed to
+         FirebaseCrashlytics). collection enabled in release only
+         (kDebugMode-gated in main.dart). Nutrition Labels in App
+         Store Connect must be updated to match: Diagnostics ->
+         Datos de errores -> Sí (Linked: Yes, Tracking: No,
+         Purposes: App Functionality + Analytics). Without that
+         label update, Apple's automated check flags this manifest
+         entry as a mismatch. -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeCrashData</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+        <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+      </array>
+    </dict>
+
+  </array>
+</dict>
+</plist>
