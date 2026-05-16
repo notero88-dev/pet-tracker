@@ -285,16 +285,28 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       print('[ModeFlip] result=${result.runtimeType} $result');
       if (!mounted) return;
 
-      // 2026-05-15 — En vivo "Bad file descriptor" fix.
+      // 2026-05-15 — "Esperando al collar…" path. Originally written for
+      // the WizardStepQueued case only (device offline at tap time, the
+      // gateway parks the LOCK for up to 4 h and returns 202). 2026-05-15
+      // PM dogfood pass revealed that WizardStepTimedOut and
+      // WizardStepQueueExpired ALSO need the same treatment: in Mode 8
+      // a device can receive the command, briefly write it, and go back
+      // to sleep before sending the REPLY frame within the 30s gateway
+      // timeout window. From the user's perspective that's not an error
+      // — the command will fire next time the dog moves. Surfacing it as
+      // a red error popup is hostile UX and inconsistent with the queued
+      // case (which is structurally the same thing under the hood).
       //
-      // When the device was offline at tap time, the gateway parks the
-      // LOCK for up to 4 h and returns immediately. The spinner stays
-      // (with a different subtitle); the next FCM `command_completed`
-      // for our queueId / imei flips us to "En vivo". 60s safety timer
-      // bounds the spinner so we don't hang the UI if the device stays
-      // offline forever.
-      if (result is WizardStepQueued && enabling) {
-        _pendingQueueId = result.queueId;
+      // So: treat any "we don't have a synchronous OK" outcome the same
+      // way — hold the spinner, subscribe to FCM completion events, fall
+      // back after 60s with a "se activará cuando se mueva" message that
+      // doesn't blame the user.
+      if (enabling &&
+          (result is WizardStepQueued ||
+           result is WizardStepTimedOut ||
+           result is WizardStepQueueExpired)) {
+        _pendingQueueId =
+            result is WizardStepQueued ? result.queueId : null;
         _subscribeToCommandEvents();
         _queuedTimeoutTimer?.cancel();
         _queuedTimeoutTimer = Timer(_queuedSpinnerTimeout, () {
@@ -376,23 +388,47 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     _showModeFlipSuccess(true);
   }
 
-  /// FCM said the queued LOCK failed / expired / timed out. Clear the
-  /// spinner and surface a clear error.
+  /// FCM said the queued LOCK reached a terminal non-acked state.
+  ///
+  /// Three distinct outcomes:
+  ///   - 'expired' / 'timeout' / 'evicted' — device was asleep or briefly
+  ///      online but didn't ACK in time. Functionally the same: the user
+  ///      should just wait for the dog to move and the next attempt will
+  ///      land. NOT an error; show as info-style snackbar with friendly
+  ///      copy that doesn't blame the user. The previous "no respondió a
+  ///      tiempo. Inténtalo de nuevo" was hostile UX for a Mode-8 device
+  ///      working exactly as designed.
+  ///   - 'failed' — firmware explicitly rejected the command (MODE,FS).
+  ///      Rare, indicates a real problem worth surfacing as an alert.
+  ///   - 'write_failed' — gateway couldn't write to the socket. Also a
+  ///      real error worth flagging.
+  ///
+  /// (2026-05-15 PM dogfood revealed the original copy was the
+  /// single most jarring user-facing failure mode of the new En vivo
+  /// flow — the device-not-online case happens often in Mode 8 by design.)
   void _onQueuedCommandFailed(CommandCompletedEvent event) {
     _clearQueuedWait();
     if (!mounted) return;
     setState(() => _isFlippingMode = false);
     final petName = event.petName.isNotEmpty ? event.petName : 'Petti';
+
+    final isTransient = event.status == 'expired' ||
+        event.status == 'timeout' ||
+        event.status == 'evicted';
+
     final message = switch (event.status) {
-      'expired' =>
-        'No alcanzamos a contactar a $petName a tiempo. Inténtalo de nuevo cuando vuelva a conectar.',
-      'failed' => '$petName rechazó el cambio de modo. Inténtalo de nuevo.',
-      'timeout' => '$petName no respondió a tiempo. Inténtalo de nuevo.',
-      _ => 'No pudimos activar En vivo. Inténtalo de nuevo.',
+      'failed' => '$petName rechazó el cambio de modo. Escríbenos si esto se repite.',
+      'write_failed' => 'No pudimos enviar el comando al collar. Inténtalo de nuevo.',
+      // expired / timeout / evicted / anything else: same friendly copy.
+      _ => 'En vivo se activará cuando $petName se mueva. Te avisaremos en cuanto pase.',
     };
+
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(message),
-      backgroundColor: PettiColors.alert,
+      // Transient outcomes use the brand-warm midnight background (info-
+      // style); only genuine firmware/write failures use alert-red.
+      backgroundColor:
+          isTransient ? PettiColors.midnight : PettiColors.alert,
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 6),
     ));
@@ -409,14 +445,19 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   /// 60s safety message: command is still queued backend-side but we
   /// release the spinner so the UI isn't held hostage. The FCM (if
   /// permissions granted) will still fire later when the device
-  /// reconnects, surfacing a banner that flips state then.
+  /// connects + acks, surfacing a banner that flips state then.
+  ///
+  /// Copy matches `_onQueuedCommandFailed`'s transient-outcome message
+  /// so the user gets a consistent mental model — whether the FCM
+  /// arrives or the safety timeout fires first, the same friendly
+  /// "se activará cuando se mueva" is shown.
   void _showQueuedFallbackMessage() {
     if (!mounted) return;
     setState(() => _isFlippingMode = false);
     final petName = widget.device.name.isNotEmpty ? widget.device.name : 'Petti';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(
-        'Aplicaremos En vivo cuando $petName vuelva a conectar. Te avisaremos.',
+        'En vivo se activará cuando $petName se mueva. Te avisaremos en cuanto pase.',
       ),
       backgroundColor: PettiColors.midnight,
       behavior: SnackBarBehavior.floating,
