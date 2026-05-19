@@ -23,12 +23,14 @@
 //   - Header + bottom panel use elevation-1 Petti shadow
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/device.dart';
+import '../../models/geofence.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/app_event_service.dart';
@@ -83,6 +85,19 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = {};
 
+  /// Geofence overlays drawn on the map. Loaded once on screen open from
+  /// `TraccarProvider.getGeofencesForDevice(traccarId)`; today there's
+  /// typically exactly one (the user's "Casa" zone). Shipped 2026-05-19
+  /// so the user can visually see whether Petti is inside her safe area
+  /// — the screenshot from 2026-05-19 1:37 PM showed TEST_1 in El Chicó
+  /// with no zone overlay, leaving "is she home?" ambiguous.
+  final Set<Circle> _circles = {};
+
+  /// Cached safe-zone center + radius for in/out membership checks.
+  /// Populated alongside [_circles]. Null until geofences load.
+  LatLng? _homeZoneCenter;
+  double? _homeZoneRadiusMeters;
+
   Position? _currentPosition;
   List<Position> _historyPositions = [];
   Position? _selectedHistoryPosition;
@@ -121,6 +136,85 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       });
       _resolveNearestPlace(position);
     }
+    _loadGeofenceCircles();
+  }
+
+  /// Build the GoogleMap [Circle] overlays for every active CIRCLE-type
+  /// geofence assigned to this device, and cache the first one (the
+  /// "Casa" zone) for in/out membership checks elsewhere in the widget.
+  /// Idempotent — safe to call multiple times.
+  ///
+  /// Color choice: PettiColors.sabana is the design system's "safe-zone /
+  /// home / OK" green. 18 % alpha fill keeps map labels readable through
+  /// the overlay; 2.5 px stroke at 70 % alpha makes the boundary obvious
+  /// at typical zoom levels (16-17).
+  void _loadGeofenceCircles() {
+    final traccar = Provider.of<TraccarProvider>(context, listen: false);
+    final traccarId = widget.device.traccarId;
+    if (traccarId == null) return;
+    final geofences = traccar.getGeofencesForDevice(traccarId);
+
+    final circles = <Circle>{};
+    LatLng? firstCenter;
+    double? firstRadius;
+    for (final g in geofences) {
+      if (g.type != GeofenceType.circle ||
+          g.center == null ||
+          g.radius == null ||
+          !g.isActive) {
+        continue;
+      }
+      circles.add(Circle(
+        circleId: CircleId('zone_${g.id}'),
+        center: g.center!,
+        radius: g.radius!,
+        fillColor: PettiColors.sabana.withValues(alpha: 0.18),
+        strokeColor: PettiColors.sabana.withValues(alpha: 0.7),
+        strokeWidth: 2,
+      ));
+      firstCenter ??= g.center;
+      firstRadius ??= g.radius;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _circles
+        ..clear()
+        ..addAll(circles);
+      _homeZoneCenter = firstCenter;
+      _homeZoneRadiusMeters = firstRadius;
+    });
+  }
+
+  /// Haversine distance in meters between [lat1, lng1] and [lat2, lng2].
+  /// Used for the in-zone membership check below. Same formula as the
+  /// SQL query in `docs/runbooks/postgres-backup.md` so server-side and
+  /// client-side answers always agree.
+  double _haversineMeters(double lat1, double lng1, double lat2, double lng2) {
+    const earthRadiusM = 6371000.0;
+    final dLat = (lat2 - lat1) * (math.pi / 180);
+    final dLng = (lng2 - lng1) * (math.pi / 180);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1 * (math.pi / 180)) *
+            math.cos(lat2 * (math.pi / 180)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return earthRadiusM * 2 * math.asin(math.sqrt(a));
+  }
+
+  /// True when the current position is inside the cached home zone.
+  /// Returns false when either piece of data isn't loaded yet, so the
+  /// UI conservatively shows the geocoded place name in those cases
+  /// instead of guessing.
+  bool get _isInHomeZone {
+    final pos = _currentPosition;
+    final center = _homeZoneCenter;
+    final radius = _homeZoneRadiusMeters;
+    if (pos == null || center == null || radius == null) return false;
+    return _haversineMeters(
+          pos.latitude, pos.longitude, center.latitude, center.longitude,
+        ) <=
+        radius;
   }
 
   /// Kick off a reverse-geocode for [position]. Cache lives in
@@ -568,6 +662,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   ),
                   markers: _markers,
                   polylines: _polylines,
+                  circles: _circles,
                   onMapCreated: (controller) =>
                       _mapController = controller,
                   myLocationButtonEnabled: true,
@@ -769,25 +864,31 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // 2026-05-19: header row. When the collar is inside the
+                // user's home zone, show "En casa" as the primary state
+                // signal (the place name is then irrelevant — the user
+                // knows where their own home is). Falls back to the
+                // reverse-geocoded neighborhood name when outside the
+                // zone, or to Traccar's geocoded address / raw coords
+                // before the geocoder has resolved. Same source as the
+                // home-screen pet card so both surfaces stay in sync.
                 Row(
                   children: [
-                    const Icon(
-                      Icons.location_on_outlined,
+                    Icon(
+                      _isInHomeZone
+                          ? Icons.home_rounded
+                          : Icons.location_on_outlined,
                       color: PettiColors.sabana,
                       size: 20,
                     ),
                     const SizedBox(width: PettiSpacing.s2),
                     Expanded(
-                      // 2026-05-12: prefer the reverse-geocoded neighborhood
-                      // name ("Chico Norte") over Traccar's address field or
-                      // raw coordinates. Same source as the home-screen pet
-                      // card subtitle so both surfaces agree. Falls back to
-                      // pos.address (Traccar geocoded) then coordinatesText
-                      // while the reverse-geocode is still in flight.
                       child: Text(
-                        _nearestPlace ??
-                            pos.address ??
-                            pos.coordinatesText,
+                        _isInHomeZone
+                            ? 'En casa'
+                            : (_nearestPlace ??
+                                pos.address ??
+                                pos.coordinatesText),
                         style: PettiText.bodyStrong()
                             .copyWith(fontSize: 14),
                         maxLines: 2,
@@ -797,6 +898,13 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: PettiSpacing.s3),
+                // 2026-05-19: Velocidad card removed per founder UX
+                // feedback — speed isn't meaningful here (the device is
+                // either still at home, walking, or in En vivo mode
+                // where the live marker speaks for itself). Now a
+                // two-card row: Actualizado + Batería. If a future
+                // version brings back the speed signal, prefer a tiny
+                // chip inside the En vivo button rather than a 3rd stat.
                 Row(
                   children: [
                     Expanded(
@@ -804,14 +912,6 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                         icon: Icons.access_time_rounded,
                         label: 'Actualizado',
                         value: _formatTimestamp(pos.deviceTime),
-                      ),
-                    ),
-                    const SizedBox(width: PettiSpacing.s2),
-                    Expanded(
-                      child: _buildStatCard(
-                        icon: Icons.speed_rounded,
-                        label: 'Velocidad',
-                        value: pos.speedText,
                       ),
                     ),
                     if (pos.batteryLevel != null) ...[
