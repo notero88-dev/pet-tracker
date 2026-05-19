@@ -52,7 +52,7 @@ class A5TakingLongerScreen extends StatelessWidget {
                 kicker: 'Tomando un poquito más',
                 title: 'A veces toma su tiempo encontrar el cielo.',
                 ledeText:
-                    'Tu Petti está conectado, pero todavía no encuentra suficientes satélites. Esto es normal en interiores.',
+                    'Tu Besti está conectado, pero todavía no encuentra suficientes satélites. Esto es normal en interiores.',
                 kickerColor: PettiColors.duskRose,
               ),
             ),

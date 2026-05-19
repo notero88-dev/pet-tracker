@@ -726,7 +726,7 @@ class _Mode8ConfiguringOverlay extends StatelessWidget {
                 const _SabanaHomeHero(),
                 const SizedBox(height: PettiSpacing.s5),
                 const PettiScreenHeading(
-                  title: 'Enseñándole a tu Petti dónde es casa.',
+                  title: 'Enseñándole a tu mascota dónde es casa.',
                   ledeText: 'Tarda menos de un minuto. Mantén el dispositivo cerca.',
                 ),
                 const SizedBox(height: PettiSpacing.s6),

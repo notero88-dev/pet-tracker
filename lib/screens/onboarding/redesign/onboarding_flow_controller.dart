@@ -162,7 +162,7 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
   // surface inline error + let user retry.
 
   Future<void> _provisionAndAdvance() async {
-    final overlay = _showOverlay('Registrando a tu Petti...');
+    final overlay = _showOverlay('Registrando tu Besti...');
     try {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       final user = auth.currentUser;
@@ -170,7 +170,7 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
         overlay.remove();
         if (!mounted) return;
         _showError(
-          'Necesitas estar logueado para configurar a tu Petti.',
+          'Necesitas estar logueado para configurar tu Besti.',
           () => _replace(_petProfile()),
         );
         return;
@@ -199,7 +199,7 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
       overlay.remove();
       if (!mounted) return;
       _showError(
-        'No pudimos registrar a tu Petti. Verifica tu conexión e intenta otra vez.\n\n$e',
+        'No pudimos registrar tu Besti. Verifica tu conexión e intenta otra vez.\n\n$e',
         () => _replace(_petProfile()),
       );
     }

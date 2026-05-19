@@ -82,7 +82,7 @@ class A5SearchingScreen extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: PettiSpacing.s5),
               child: PettiScreenHeading(
-                title: 'Despertando a tu Petti.',
+                title: 'Despertando tu Besti.',
                 ledeText:
                     'A veces toma 30 segundos, a veces hasta 5 minutos. No tengas afán.',
               ),

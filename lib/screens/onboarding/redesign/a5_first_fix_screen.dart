@@ -233,7 +233,7 @@ class _InfoSheet extends StatelessWidget {
               ),
               const SizedBox(height: PettiSpacing.s2 + 2),
               Text(
-                'Encontramos a tu Petti.',
+                'Encontramos a tu mascota.',
                 style: PettiText.h2().copyWith(
                   color: PettiColors.fgOnDark,
                   fontSize: 24,

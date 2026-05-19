@@ -106,7 +106,7 @@ class A6DoneScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: PettiSpacing.s3),
                   Text(
-                    'Te avisaremos si sale del círculo. Mientras tanto, su Petti duerme tranquilo y cuida la batería.',
+                    'Te avisaremos si sale del círculo. Mientras tanto, tu Besti duerme tranquilo y cuida la batería.',
                     style: PettiText.lead().copyWith(
                       color: PettiColors.fgOnDarkDim,
                       fontSize: 15,

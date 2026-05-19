@@ -85,8 +85,8 @@ class _A4PetProfileScreenState extends State<A4PetProfileScreen> {
                 children: [
                   const SizedBox(height: PettiSpacing.s4),
                   PettiScreenHeading(
-                    kicker: 'Tu Petti',
-                    title: '¿Quién es tu Petti?',
+                    kicker: 'Tu mascota',
+                    title: '¿Quién es tu mascota?',
                     lede: Text(
                       'Solo el nombre y si es perrito o gatito.',
                       style: PettiText.lead().copyWith(

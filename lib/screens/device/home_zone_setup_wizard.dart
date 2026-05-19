@@ -1743,7 +1743,7 @@ class _DeniedStep extends StatelessWidget {
 
   static const _instructions = [
     'Abre Ajustes en tu iPhone',
-    'Busca "Petti" en la lista',
+    'Busca "Besti" en la lista',
     'Activa "Ubicación → Mientras uso la app"',
     'Activa "Ubicación precisa"',
   ];

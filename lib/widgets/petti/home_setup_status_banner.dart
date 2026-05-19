@@ -210,7 +210,7 @@ _BannerState _resolveBannerState(HomeSetupIntent intent) {
   // Terminal states first.
   if (intent.isSuccess) {
     return _BannerState(
-      title: '✓ Listo — Petti está protegido',
+      title: '✓ Listo — ${intent.petName ?? 'tu mascota'} está protegida',
       icon: Icons.check_circle_rounded,
       accentColor: PettiColors.sabana,
       backgroundColor: PettiColors.sabanaSoft,
@@ -219,7 +219,7 @@ _BannerState _resolveBannerState(HomeSetupIntent intent) {
   }
   if (intent.status == 'failed') {
     return _BannerState(
-      title: 'No pudimos configurar a Petti',
+      title: 'No pudimos configurar a ${intent.petName ?? 'tu mascota'}',
       subtitle: intent.lastError != null
           ? 'Toca para ver detalles'
           : 'Inténtalo de nuevo',
@@ -261,7 +261,7 @@ _BannerState _resolveBannerState(HomeSetupIntent intent) {
   }
   if (elapsed >= _kSlowThreshold) {
     return _BannerState(
-      title: 'Petti está tomando más tiempo del esperado',
+      title: '${intent.petName ?? 'Tu mascota'} está tomando más tiempo del esperado',
       subtitle: 'Sigue intentando — te avisamos en cuanto termine.',
       icon: Icons.hourglass_top_rounded,
       accentColor: PettiColors.cafe,
@@ -292,7 +292,7 @@ _BannerState _resolveBannerState(HomeSetupIntent intent) {
   }
   // Default: reconciling on scan / ap / geo, or pending past 30s.
   return _BannerState(
-    title: 'Configurando a ${intent.petName ?? 'Petti'}...',
+    title: 'Configurando a ${intent.petName ?? 'tu mascota'}...',
     icon: Icons.settings_remote_rounded,
     accentColor: PettiColors.marigold,
     backgroundColor: PettiColors.marigoldSoft,

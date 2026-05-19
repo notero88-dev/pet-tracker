@@ -62,7 +62,7 @@ class A4PairedScreen extends StatelessWidget {
                 children: [
                   PettiScreenHeading(
                     kicker: 'Pareado',
-                    title: 'Listo. Tu Petti dijo hola.',
+                    title: 'Listo. Tu Besti dijo hola.',
                     lede: RichText(
                       text: TextSpan(
                         style: PettiText.lead().copyWith(

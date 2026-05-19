@@ -52,7 +52,7 @@ class A6QueuedScreen extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: PettiSpacing.s5),
               child: PettiScreenHeading(
-                kicker: 'Tu Petti está dormido',
+                kicker: 'Tu Besti está dormido',
                 title: 'Lo despertaremos cuando se mueva.',
                 ledeText:
                     'Está en modo de ahorro. Apenas se mueva o lo lleves al aire libre, terminamos la configuración solos.',
@@ -69,7 +69,7 @@ class A6QueuedScreen extends StatelessWidget {
               primaryLabel: 'Entendido',
               onPrimary: onAcknowledge,
               secondaryLabel:
-                  onHelp == null ? null : '¿Cómo despierto a mi Petti?',
+                  onHelp == null ? null : '¿Cómo despierto mi Besti?',
               onSecondary: onHelp,
             ),
           ],

@@ -520,7 +520,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     _clearQueuedWait();
     if (!mounted) return;
     setState(() => _isFlippingMode = false);
-    final petName = event.petName.isNotEmpty ? event.petName : 'Petti';
+    final petName = event.petName.isNotEmpty ? event.petName : 'tu mascota';
 
     final isTransient = event.status == 'expired' ||
         event.status == 'timeout' ||
@@ -564,7 +564,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   void _showQueuedFallbackMessage() {
     if (!mounted) return;
     setState(() => _isFlippingMode = false);
-    final petName = widget.device.name.isNotEmpty ? widget.device.name : 'Petti';
+    final petName = widget.device.name.isNotEmpty ? widget.device.name : 'tu mascota';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(
         'En vivo se activará cuando $petName se mueva. Te avisaremos en cuanto pase.',
@@ -582,10 +582,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         title: Text(enabling ? '¿Activar modo de búsqueda?' : '¿Volver a modo normal?'),
         content: Text(
           enabling
-              ? 'Petti reportará su ubicación en tiempo real. La batería '
+              ? '${widget.device.name} reportará su ubicación en tiempo real. La batería '
                   'se consumirá mucho más rápido — apaga este modo cuando '
                   'la encuentres.'
-              : 'Petti volverá a modo casa (ahorro de batería). Solo '
+              : '${widget.device.name} volverá a modo casa (ahorro de batería). Solo '
                   'reportará cuando salga de la zona segura.',
         ),
         actions: [
@@ -609,14 +609,16 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
   void _showModeFlipError(WizardStepResult result, bool wasEnabling) {
     String message;
+    final petName =
+        widget.device.name.isNotEmpty ? widget.device.name : 'tu mascota';
     if (result is WizardStepDeviceOffline) {
-      message = 'No estamos detectando a Petti. Verifica que esté encendida.';
+      message = 'No estamos detectando a $petName. Verifica que esté encendida.';
     } else if (result is WizardStepTimedOut) {
-      message = 'Petti no respondió a tiempo. Inténtalo de nuevo en un momento.';
+      message = '$petName no respondió a tiempo. Inténtalo de nuevo en un momento.';
     } else if (result is WizardStepQueueExpired) {
-      message = 'Petti no se conectó a tiempo. Vuelve a intentar cuando esté en línea.';
+      message = '$petName no se conectó a tiempo. Vuelve a intentar cuando esté en línea.';
     } else if (result is WizardStepDeviceRejected) {
-      message = 'Petti rechazó el cambio de modo. Inténtalo de nuevo.';
+      message = '$petName rechazó el cambio de modo. Inténtalo de nuevo.';
     } else if (result is WizardStepFailed) {
       message = 'No pudimos cambiar el modo: ${result.error}';
     } else {

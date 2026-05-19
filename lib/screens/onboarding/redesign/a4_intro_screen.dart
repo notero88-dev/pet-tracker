@@ -41,7 +41,7 @@ class A4IntroScreen extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: PettiSpacing.s5),
               child: PettiScreenHeading(
                 kicker: 'Paso 1 · emparejar',
-                title: 'Saca tu Petti de la caja.',
+                title: 'Saca tu Besti de la caja.',
                 ledeText:
                     'Lo vas a sostener cerca del teléfono. Tenlo a la mano — esto toma menos de un minuto.',
               ),
@@ -50,7 +50,7 @@ class A4IntroScreen extends StatelessWidget {
             PettiCtaDock(
               primaryLabel: 'Lo tengo',
               onPrimary: onContinue,
-              secondaryLabel: onNotYet == null ? null : 'Mi Petti aún no llega',
+              secondaryLabel: onNotYet == null ? null : 'Mi Besti aún no llega',
               onSecondary: onNotYet,
             ),
           ],
