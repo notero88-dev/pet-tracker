@@ -144,14 +144,31 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   /// "Casa" zone) for in/out membership checks elsewhere in the widget.
   /// Idempotent — safe to call multiple times.
   ///
+  /// 2026-05-19 follow-up: TraccarProvider's `_geofences` is normally
+  /// empty until the user opens GeofenceListScreen, which is the only
+  /// screen that calls `loadGeofences()`. The Mapa screen is loaded on
+  /// app open and the user may never visit the geofence list — so we
+  /// trigger the fetch ourselves here if the cache is empty, then read
+  /// from it. Subsequent visits hit the cache without an API call.
+  ///
   /// Color choice: PettiColors.sabana is the design system's "safe-zone /
   /// home / OK" green. 18 % alpha fill keeps map labels readable through
-  /// the overlay; 2.5 px stroke at 70 % alpha makes the boundary obvious
+  /// the overlay; 2 px stroke at 70 % alpha makes the boundary obvious
   /// at typical zoom levels (16-17).
-  void _loadGeofenceCircles() {
+  Future<void> _loadGeofenceCircles() async {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     final traccarId = widget.device.traccarId;
     if (traccarId == null) return;
+
+    // Fire a fetch if the cache is empty. await it so subsequent
+    // build()s see the new circles. If fetch fails the provider logs
+    // the error and we keep an empty list — UI silently falls back to
+    // the geocoded place name.
+    if (traccar.geofences.isEmpty) {
+      await traccar.loadGeofences();
+    }
+    if (!mounted) return;
+
     final geofences = traccar.getGeofencesForDevice(traccarId);
 
     final circles = <Circle>{};
@@ -176,7 +193,6 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       firstRadius ??= g.radius;
     }
 
-    if (!mounted) return;
     setState(() {
       _circles
         ..clear()
