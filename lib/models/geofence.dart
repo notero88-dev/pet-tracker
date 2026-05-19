@@ -54,35 +54,76 @@ class Geofence {
     };
   }
 
-  /// Parse WKT area format
+  /// Parse Traccar's WKT area format.
+  ///
+  /// Traccar emits geofences in WKT-like strings. Two flavors land here:
+  ///
+  ///   CIRCLE (lat lon, radius_meters)
+  ///       e.g. "CIRCLE (4.679186 -74.052371, 70)"
+  ///       (note the space after CIRCLE and the comma before radius —
+  ///       this is the format the live droplet returns as of 2026-05-19)
+  ///   POLYGON ((lat1 lon1, lat2 lon2, ...))
+  ///       e.g. "POLYGON ((4.67 -74.05, 4.68 -74.05, 4.68 -74.04, ...))"
+  ///
+  /// 2026-05-19 bug-fix history (was failing silently in production):
+  ///
+  ///   1. Old parser did `substring(7, …).split(' ')` assuming
+  ///      "CIRCLE(...)" (no space). The actual "CIRCLE (...)" left
+  ///      `coords[0] = "(4.679186"` and `double.parse` threw on the
+  ///      leading paren — caught by the outer try/catch, both
+  ///      `_center` and `_radius` stayed null, `_isInHomeZone` returned
+  ///      false, "En casa" never displayed. Nico's 2026-05-19 14:02 PM
+  ///      device log line-for-line surfaced the bug:
+  ///          type=GeofenceType.circle  center=null  radius=null
+  ///          raw_area="CIRCLE (4.679186 -74.052371, 70)"
+  ///   2. Old parser also did `radiusDegrees * 111000` assuming
+  ///      Traccar emitted degrees. Traccar actually emits meters —
+  ///      the multiplier would have turned a 70 m zone into a
+  ///      7 770 km circle (bigger than Colombia).
+  ///
+  /// Robust strategy now: pull everything between the FIRST '(' and
+  /// the LAST ')', then split on any run of commas-or-whitespace and
+  /// read the first 3 tokens as (lat, lon, radius_m). Works for
+  /// "CIRCLE(...)", "CIRCLE (...)", trailing spaces, and any
+  /// reasonable variation. Polygon path mirrors the same idea.
   void _parseArea() {
     try {
       if (area.startsWith('CIRCLE')) {
         _type = GeofenceType.circle;
-        
-        // Parse: CIRCLE(lat lon radius_in_degrees)
-        final coords = area
-            .substring(7, area.length - 1) // Remove "CIRCLE(" and ")"
-            .split(' ');
-        
-        if (coords.length >= 3) {
-          final lat = double.parse(coords[0]);
-          final lon = double.parse(coords[1]);
-          final radiusDegrees = double.parse(coords[2]);
-          
+
+        final openParen = area.indexOf('(');
+        final closeParen = area.lastIndexOf(')');
+        if (openParen < 0 || closeParen <= openParen) return;
+
+        final inner = area.substring(openParen + 1, closeParen);
+        final parts = inner
+            .split(RegExp(r'[,\s]+'))
+            .where((p) => p.isNotEmpty)
+            .toList();
+
+        if (parts.length >= 3) {
+          final lat = double.parse(parts[0]);
+          final lon = double.parse(parts[1]);
+          final radiusMeters = double.parse(parts[2]);
           _center = LatLng(lat, lon);
-          _radius = radiusDegrees * 111000; // Convert degrees to meters (approx)
+          _radius = radiusMeters; // Traccar emits meters directly.
         }
       } else if (area.startsWith('POLYGON')) {
         _type = GeofenceType.polygon;
-        
-        // Parse: POLYGON((lat1 lon1, lat2 lon2, ...))
-        final coordsStr = area
-            .substring(9, area.length - 2) // Remove "POLYGON((" and "))"
-            .split(',');
-        
-        _polygonPoints = coordsStr.map((coord) {
-          final parts = coord.trim().split(' ');
+
+        // Pull contents between the OUTER "((" and "))".
+        final openParen = area.indexOf('((');
+        final closeParen = area.lastIndexOf('))');
+        if (openParen < 0 || closeParen <= openParen) return;
+
+        final inner = area.substring(openParen + 2, closeParen);
+
+        _polygonPoints = inner.split(',').map((coord) {
+          final parts = coord
+              .trim()
+              .split(RegExp(r'\s+'))
+              .where((p) => p.isNotEmpty)
+              .toList();
           if (parts.length >= 2) {
             return LatLng(
               double.parse(parts[0]),
@@ -93,8 +134,8 @@ class Geofence {
         }).whereType<LatLng>().toList();
       }
     } catch (e) {
-      // Failed to parse, leave as null
-      print('Failed to parse geofence area: $e');
+      // ignore: avoid_print
+      print('Geofence: failed to parse area "$area": $e');
     }
   }
 
