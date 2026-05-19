@@ -576,6 +576,18 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   }
 
   Future<bool> _confirmModeFlip(bool enabling) async {
+    // Disable-mode copy: branches on whether the device is currently
+    // inside the home zone. The persistent mode push-service flips it
+    // to is different in each case (Mode 8 HOME vs Mode 7 MOTION), so
+    // the user-facing explanation has to differ too. Founder feedback
+    // 2026-05-19 — the previous one-size copy said "modo casa" even
+    // when the dog wasn't anywhere near home, which was confusing.
+    final disableBody = _isInHomeZone
+        ? '${widget.device.name} volverá a su modo de casa (ahorro de '
+            'batería). Solo te avisaremos si sale de la zona segura.'
+        : '${widget.device.name} volverá a su modo normal. Mientras se '
+            'mueva, reportará su ubicación cada 5 minutos. Cuando esté '
+            'quieta, descansará para cuidar la batería.';
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -585,8 +597,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               ? '${widget.device.name} reportará su ubicación en tiempo real. La batería '
                   'se consumirá mucho más rápido — apaga este modo cuando '
                   'la encuentres.'
-              : '${widget.device.name} volverá a modo casa (ahorro de batería). Solo '
-                  'reportará cuando salga de la zona segura.',
+              : disableBody,
         ),
         actions: [
           TextButton(
