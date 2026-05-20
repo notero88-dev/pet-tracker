@@ -80,19 +80,31 @@
 	          iOS gates BSSID behind location auth, not just the
 	          entitlement; see 2026-05-11 phone-side home zone plan). -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Petti usa tu ubicación para centrar el mapa y detectar tu red Wi-Fi de casa al configurar la zona de tu mascota.</string>
+	<string>Besti usa tu ubicación para centrar el mapa y detectar tu red Wi-Fi de casa al configurar la zona de tu mascota.</string>
+
+	<!-- ALWAYS variant required by Apple's static analyzer because one of
+	     our linked iOS plugins (likely `geolocator` or the Google Maps
+	     SDK) references the `CLAuthorizationStatus.authorizedAlways`
+	     symbol — even though Besti today only requests WhenInUse and
+	     never escalates to Always. Apple's automated review (Transporter
+	     warning 90683 on 2026-05-20 build 2) requires the purpose string
+	     to exist whenever the symbol is linked, regardless of whether we
+	     actually call requestAlwaysAuthorization. Shipped 2026-05-20 to
+	     unblock build 3 submission. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Besti puede usar tu ubicación en segundo plano para alertarte si tu mascota sale de la zona segura aunque tengas la app cerrada.</string>
 
 	<!-- Required by `mobile_scanner` for QR-code scanning during A4
 	     onboarding. Without this, mobile_scanner throws and the camera
 	     view never appears. -->
 	<key>NSCameraUsageDescription</key>
-	<string>Petti necesita la cámara para escanear el código QR de tu dispositivo.</string>
+	<string>Besti necesita la cámara para escanear el código QR de tu dispositivo.</string>
 
 	<!-- Required by `image_picker` even if photo selection is deferred,
 	     because the package's iOS plugin queries permission at init
 	     time on some iOS versions. -->
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Petti puede usar tu galería si decides agregar una foto de tu mascota.</string>
+	<string>Besti puede usar tu galería si decides agregar una foto de tu mascota.</string>
 
 	<!-- ─── Background modes for push notifications ──────────────── -->
 	<!-- Required for FCM background delivery. Pairs with the
