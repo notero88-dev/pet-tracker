@@ -19,7 +19,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
-        android:label="PetTrack"
+        android:label="Besti"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
@@ -37,7 +37,7 @@
              value below — DO NOT remove this meta-data tag entirely. -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCSAgHYzg74m6TNEx0Zw8NX7wb1IwGvkh0"/>
+            android:value="AIzaSyDqSvh-Q_bDVBv35pxp2087elkUnsdejjk"/>
 
         <activity
             android:name=".MainActivity"
