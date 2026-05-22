@@ -22,6 +22,7 @@ import 'package:flutter/widgets.dart';
 import '../models/device.dart';
 import '../providers/traccar_provider.dart';
 import '../screens/onboarding/mode8_wizard_state.dart';
+import '../utils/bssid.dart';
 import 'provisioning_api.dart';
 
 /// Outcome of `run()` — exactly one of these is delivered when the
@@ -119,6 +120,14 @@ class Mode8ConfigurationController {
 
     final HomeSetupIntent posted;
     try {
+      // 2026-05-21: when we have a phone-side BSSID, expand to the
+      // original + ±1 neighbors (covers the dual-band-router case where
+      // the phone connected to 5 GHz but the MT710 scans 2.4 GHz with
+      // last-byte-1 BSSID, or vice versa). See utils/bssid.dart for
+      // the full rationale. Backend stores all three in
+      // device_desired_state.target_macs and ships them verbatim to
+      // the device firmware (AP,,,MAC1,MAC2,MAC3). Single-BSSID legacy
+      // path is preserved for the device-scan branch (homeBssid null).
       posted = await apiClient.postHomeSetup(
         imei: imei,
         intentId: intentId,
@@ -126,10 +135,7 @@ class Mode8ConfigurationController {
         homeLng: homeCenter.longitude,
         radiusMeters: radiusMeters,
         petName: petName,
-        // Phase B fields — null on the legacy device-scan path,
-        // non-null when called from the new Settings → Dispositivo
-        // entry or the phone-side onboarding step.
-        homeBssid: homeBssid,
+        homeBssids: homeBssid != null ? bssidWithNeighbors(homeBssid!) : null,
         homeSsid: homeSsid,
       );
     } on HomeSetupApiException catch (e) {

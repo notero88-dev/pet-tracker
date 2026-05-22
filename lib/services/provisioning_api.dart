@@ -483,9 +483,10 @@ class ProvisioningApi {
   ///
   /// Sends `LOCK,intervalSeconds,revertMinutes` to the device. The device
   /// streams positions at [intervalSeconds] for [revertMinutes], then
-  /// auto-reverts to its previous persistent mode (Mode 8 HOME or Mode 7
-  /// AWAY). No server-side timer needed — the device handles the revert
-  /// itself per Mictrack PDF p.1.
+  /// auto-reverts to its previous persistent mode (always Mode 8 HOME
+  /// since the 2026-05-21 architecture simplification). No server-side
+  /// timer needed — the device handles the revert itself per Mictrack
+  /// PDF p.1.
   ///
   /// This is the recommended replacement for [setModeRealtime] in the
   /// "Pet is lost" UX. Unlike Mode 1 (which is permanent), LOCK can't
@@ -542,10 +543,21 @@ class ProvisioningApi {
     required int radiusMeters,
     required String petName,
     // Phase B (2026-05-11): optional phone-side fields. When the app
-    // supplies homeBssid, the runner skips the on-device SCAN and uses
-    // this BSSID for the AP slot directly. Both must be supplied
-    // together (or both omitted) — the backend validates this.
+    // supplies a BSSID, the runner skips the on-device SCAN and uses
+    // it for the AP slot directly.
+    //
+    // Two accepted shapes (mutually exclusive — validator on the
+    // backend enforces this via Joi.oxor):
+    //   homeBssid:  single MAC      (legacy, kept for back-compat)
+    //   homeBssids: array of 1..3   (new 2026-05-21 — original + ±1
+    //                                neighbors to cover the dual-band
+    //                                router case; see utils/bssid.dart
+    //                                for the rationale)
+    //
+    // Callers should prefer `homeBssids` going forward. Pass the
+    // result of `bssidWithNeighbors(captured)` from utils/bssid.dart.
     String? homeBssid,
+    List<String>? homeBssids,
     String? homeSsid,
   }) async {
     final body = <String, dynamic>{
@@ -555,7 +567,11 @@ class ProvisioningApi {
       'radiusMeters': radiusMeters,
       'petName': petName,
     };
-    if (homeBssid != null) body['homeBssid'] = homeBssid;
+    if (homeBssids != null && homeBssids.isNotEmpty) {
+      body['homeBssids'] = homeBssids;
+    } else if (homeBssid != null) {
+      body['homeBssid'] = homeBssid;
+    }
     if (homeSsid != null) body['homeSsid'] = homeSsid;
     final res = await _http.post(
       Uri.parse('$baseUrl/devices/$imei/home-setup'),
