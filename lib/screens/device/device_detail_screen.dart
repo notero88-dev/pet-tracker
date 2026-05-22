@@ -48,7 +48,29 @@ import 'device_settings_screen.dart';
 class DeviceDetailScreen extends StatefulWidget {
   final Device device;
 
-  const DeviceDetailScreen({super.key, required this.device});
+  /// When false, the header's back-arrow is hidden. MapaTab passes false
+  /// since Mapa is a root tab with no parent route to pop to (the old
+  /// behavior crashed the user into a dark screen). Other call sites
+  /// (Mascotas → tap pet card) default to true and keep the arrow.
+  final bool showBackButton;
+
+  /// When non-null AND has 2+ entries, a horizontal scrollable row of pet
+  /// chips renders above the header card. MapaTab passes the full pet
+  /// list so the user can switch which device the screen is focused on.
+  /// Single-pet accounts pass null (or a 1-entry list) → no chip row.
+  final List<Device>? allDevices;
+
+  /// Called when the user taps a different pet chip. MapaTab uses this
+  /// to update its selected index and re-render with the new device.
+  final void Function(Device)? onSwitchDevice;
+
+  const DeviceDetailScreen({
+    super.key,
+    required this.device,
+    this.showBackButton = true,
+    this.allDevices,
+    this.onSwitchDevice,
+  });
 
   @override
   State<DeviceDetailScreen> createState() => _DeviceDetailScreenState();
@@ -757,44 +779,165 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
   // ----------------------------------------------------- header card
 
-  Widget _buildHeader() {
-    return Container(
-      margin: const EdgeInsets.all(PettiSpacing.s4),
-      decoration: BoxDecoration(
-        color: PettiColors.cloud,
-        borderRadius: BorderRadius.circular(PettiRadii.md),
-        boxShadow: PettiShadows.elevation1,
-        border: Border.all(color: PettiColors.borderLight),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => Navigator.pop(context),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  widget.device.name,
-                  style: PettiText.h4(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+  /// Horizontally scrolling row of pet chips. Each chip shows the pet's
+  /// initial in a colored circle + its name; tapping switches the map +
+  /// header to that pet by calling [widget.onSwitchDevice]. Only
+  /// rendered when the user has 2+ pets and a switcher callback is wired
+  /// (today that means it appears in the Mapa tab and nowhere else).
+  Widget _buildPetChipRow(List<Device> devices) {
+    return SizedBox(
+      height: 56,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(
+          horizontal: PettiSpacing.s4,
+          vertical: PettiSpacing.s2,
+        ),
+        itemCount: devices.length,
+        separatorBuilder: (_, __) => const SizedBox(width: PettiSpacing.s2),
+        itemBuilder: (_, i) {
+          final d = devices[i];
+          final isSelected = d.id == widget.device.id;
+          final initial = d.name.isNotEmpty ? d.name[0].toUpperCase() : '?';
+          return InkWell(
+            borderRadius: BorderRadius.circular(PettiRadii.pill),
+            onTap: isSelected ? null : () => widget.onSwitchDevice?.call(d),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: PettiSpacing.s3,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: isSelected ? PettiColors.midnight : PettiColors.cloud,
+                borderRadius: BorderRadius.circular(PettiRadii.pill),
+                border: Border.all(
+                  color: isSelected
+                      ? PettiColors.midnight
+                      : PettiColors.borderLight,
                 ),
-                Text(
-                  widget.device.statusText,
-                  style: PettiText.bodySm().copyWith(
-                    color: widget.device.isOnline
-                        ? PettiColors.sabana
-                        : PettiColors.fgDim,
-                    fontWeight: FontWeight.w600,
+                boxShadow: isSelected ? null : PettiShadows.elevation1,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? PettiColors.marigold
+                          : PettiColors.marigoldSoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      initial,
+                      style: PettiText.bodyStrong().copyWith(
+                        color: PettiColors.midnight,
+                        fontSize: 13,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Text(
+                    d.name,
+                    style: PettiText.bodyStrong().copyWith(
+                      color: isSelected
+                          ? PettiColors.cloud
+                          : PettiColors.midnight,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Computes the subtitle text shown under the pet name in the header.
+  ///
+  /// 2026-05-22: replaces the previous `widget.device.statusText` which
+  /// just rendered "Desconocido" when the Traccar status enum didn't
+  /// match. Now prefers a human-readable place name:
+  ///   1. "En casa" if the latest position is inside the home geofence
+  ///   2. Reverse-geocoded place name (e.g. "El Chicó", "Bella Suiza")
+  ///   3. The position's own address field if Traccar resolved one
+  ///   4. Lat/lon coordinate text as a last resort
+  ///   5. Falls back to the legacy statusText only if no position at all
+  String _subtitleText() {
+    if (_currentPosition == null) return widget.device.statusText;
+    if (_isInHomeZone) return 'En casa';
+    final pos = _currentPosition!;
+    return _nearestPlace ?? pos.address ?? pos.coordinatesText;
+  }
+
+  Widget _buildHeader() {
+    final allDevices = widget.allDevices ?? const <Device>[];
+    final showPicker = allDevices.length >= 2 && widget.onSwitchDevice != null;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showPicker) _buildPetChipRow(allDevices),
+        Container(
+          // Not `const` — top margin is a runtime ternary based on whether
+          // the pet-chip row is rendered above.
+          margin: EdgeInsets.fromLTRB(
+            PettiSpacing.s4,
+            // When the chip row is visible above, tighten the top margin
+            // so the two surfaces feel related, not stacked at random.
+            showPicker ? PettiSpacing.s2 : PettiSpacing.s4,
+            PettiSpacing.s4,
+            PettiSpacing.s4,
           ),
+          decoration: BoxDecoration(
+            color: PettiColors.cloud,
+            borderRadius: BorderRadius.circular(PettiRadii.md),
+            boxShadow: PettiShadows.elevation1,
+            border: Border.all(color: PettiColors.borderLight),
+          ),
+          child: Row(
+            children: [
+              if (widget.showBackButton)
+                IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.pop(context),
+                )
+              else
+                // Keep horizontal padding consistent when the back arrow
+                // is hidden so the pet name doesn't slam against the edge.
+                const SizedBox(width: PettiSpacing.s4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.device.name,
+                      style: PettiText.h4(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      _subtitleText(),
+                      style: PettiText.bodySm().copyWith(
+                        color: _isInHomeZone
+                            ? PettiColors.sabana
+                            : (widget.device.isOnline
+                                ? PettiColors.midnight
+                                : PettiColors.fgDim),
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
           if (_isLiveMode)
             Container(
               padding: const EdgeInsets.symmetric(
@@ -868,9 +1011,11 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             ),
           ),
           const SizedBox(width: PettiSpacing.s1),
-        ],
-      ),
-    );
+            ],  // close Row.children
+          ),    // close Row
+        ),      // close Container
+      ],        // close Column.children
+    );          // close Column
   }
 
   // ----------------------------------------------------- bottom panel

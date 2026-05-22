@@ -1,7 +1,7 @@
 name: pettrack_app
 description: "PetTrack - Pet GPS Tracking for Colombia"
 publish_to: 'none'
-version: 1.0.0+3
+version: 1.0.0+12
 
 environment:
   sdk: ^3.11.0
@@ -117,3 +117,4 @@ flutter:
   assets:
     - assets/icons/
     - assets/images/
+    - assets/illustrations/

@@ -26,8 +26,22 @@ import '../../utils/petti_theme.dart';
 import '../device/device_detail_screen.dart';
 import '../onboarding/redesign/onboarding_flow_controller.dart';
 
-class MapaTab extends StatelessWidget {
+class MapaTab extends StatefulWidget {
   const MapaTab({super.key});
+
+  @override
+  State<MapaTab> createState() => _MapaTabState();
+}
+
+class _MapaTabState extends State<MapaTab> {
+  // 2026-05-22: lifted from a previous StatelessWidget to support a
+  // pet-picker chip row when the user has multiple devices. The index
+  // is stored by Traccar device id (int) rather than position so a
+  // reordered TraccarProvider list (e.g. after a refetch) doesn't
+  // accidentally switch which pet is shown. Falls back to the first
+  // device when the stored id isn't in the current list (deleted
+  // device, account swap, etc.).
+  int? _selectedDeviceId;
 
   @override
   Widget build(BuildContext context) {
@@ -39,8 +53,21 @@ class MapaTab extends StatelessWidget {
         if (traccar.devices.isEmpty) {
           return _MapaEmptyState();
         }
-        // V1: single-device. Take the first one.
-        return DeviceDetailScreen(device: traccar.devices.first);
+        final selected = traccar.devices.firstWhere(
+          (d) => d.id == _selectedDeviceId,
+          orElse: () => traccar.devices.first,
+        );
+        return DeviceDetailScreen(
+          // ValueKey forces a fresh State object on switch so the new
+          // device's WebSocket subscription, position cache, and
+          // controllers boot from scratch instead of inheriting the
+          // previous pet's stale state.
+          key: ValueKey(selected.id),
+          device: selected,
+          showBackButton: false,
+          allDevices: traccar.devices,
+          onSwitchDevice: (d) => setState(() => _selectedDeviceId = d.id),
+        );
       },
     );
   }
