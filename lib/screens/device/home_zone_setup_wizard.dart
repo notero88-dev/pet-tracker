@@ -179,7 +179,16 @@ class _HomeZoneSetupWizardState extends State<HomeZoneSetupWizard> {
   Widget _renderStep() {
     switch (_step) {
       case _Step.intro:
-        return _IntroStep(onNext: () => _goto(_Step.permission));
+        return _IntroStep(
+          onNext: () => _goto(_Step.permission),
+          // "Configurar después" — required for Apple Review (reviewers
+          // are not at a home with Wi-Fi) AND for real users who first
+          // unbox the collar on the street / at the park. In onboarding,
+          // skip drops them into the main tabs; from Settings entry,
+          // it just dismisses the wizard. Home zone stays reachable
+          // later via Cuenta → Mascotas → este collar → "Activar zona".
+          onSkip: _onExit,
+        );
       case _Step.permission:
         return _PermissionStep(
           onGrant: _onGrantPermission,
@@ -428,7 +437,8 @@ class _PillIconButton extends StatelessWidget {
 
 class _IntroStep extends StatelessWidget {
   final VoidCallback onNext;
-  const _IntroStep({required this.onNext});
+  final VoidCallback onSkip;
+  const _IntroStep({required this.onNext, required this.onSkip});
 
   @override
   Widget build(BuildContext context) {
@@ -473,6 +483,25 @@ class _IntroStep extends StatelessWidget {
               label: 'Empezar',
               icon: Icons.home_outlined,
               onPressed: onNext,
+            ),
+            const SizedBox(height: 8),
+            // Skip option — required so users (and Apple reviewers) who
+            // aren't currently at home can finish onboarding without
+            // being trapped. They can complete this later from Cuenta.
+            TextButton(
+              onPressed: onSkip,
+              style: TextButton.styleFrom(
+                foregroundColor: PettiColors.fg,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              child: const Text(
+                'Configurar después',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
