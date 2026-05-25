@@ -94,6 +94,10 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
     } catch (e) {
       // Network blip, expired creds, no device yet — each tab's empty
       // state handles the missing-devices case. We just log and move on.
+      // 2026-05-24: a permission-denied here once meant Firestore Security
+      // Rules were broken (the default 30-day trial expired). See
+      // `pettrack-backend/firebase/firestore.rules` for the deployed
+      // rules + the deploy script in push-service/scripts/.
       debugPrint('[PettiMainTabs] Traccar init failed: $e');
     }
   }

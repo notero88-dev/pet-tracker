@@ -29,10 +29,35 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
-  /// Get user profile
+  /// Get user profile.
+  ///
+  /// **Source: server (with cache fallback).** Forced to bypass Firestore's
+  /// iOS local persistence after the 2026-05-23 incident where a stale
+  /// cached doc (predating the addition of `traccarEmail` /
+  /// `traccarPassword` fields) kept causing the app's Mapa tab to render
+  /// empty even though the server-side Firestore doc had everything.
+  ///
+  /// The trap is silent: when `_initializeTraccar` reads a doc without
+  /// `traccarPassword`, it `debugPrint`s and early-returns. The user sees
+  /// "Aún no hay mascotas" with no error toast and no recovery path
+  /// except deleting + reinstalling the app to wipe the Firestore
+  /// persistence file in the iOS sandbox.
+  ///
+  /// First try `Source.server`. On any error (network out, timeout, etc.)
+  /// fall back to default `Source.serverAndCache` so an offline launch
+  /// still gets the cached profile. This preserves offline-launch UX
+  /// while killing the stale-cache trap that was costing live users.
   Future<Map<String, dynamic>?> getUserProfile(String userId) async {
-    final doc = await _db.collection('users').doc(userId).get();
-    return doc.exists ? doc.data() : null;
+    final ref = _db.collection('users').doc(userId);
+    try {
+      final fresh = await ref.get(const GetOptions(source: Source.server));
+      return fresh.exists ? fresh.data() : null;
+    } catch (_) {
+      // Network failure, timeout, etc. — fall back to whatever's local
+      // so offline-first launches still work.
+      final cached = await ref.get();
+      return cached.exists ? cached.data() : null;
+    }
   }
 
   /// Update user profile fields. Uses `set` + merge instead of `update` so it
