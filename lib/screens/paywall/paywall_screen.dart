@@ -19,6 +19,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/subscription_provider.dart';
 import '../../utils/constants.dart';
@@ -184,6 +185,31 @@ class _PaywallBodyState extends State<_PaywallBody> {
                   ),
                 ),
               ),
+              const SizedBox(height: PettiSpacing.s2),
+              // WhatsApp support — Apple-acceptable (Tractive / Fi / Whistle
+              // all link external support from their paywalls). Pre-filled
+              // message gives Nico context on the first message.
+              TextButton.icon(
+                onPressed: () async {
+                  final uri = AppConstants.whatsAppSupportLink(
+                    'Tengo dudas de la suscripción de Besti',
+                  );
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                },
+                icon: const Icon(
+                  Icons.chat_bubble_outline,
+                  size: 18,
+                  color: Color(0xFF25D366),
+                ),
+                label: Text(
+                  '¿Tienes dudas? Escríbenos por WhatsApp',
+                  style: PettiText.body().copyWith(
+                    color: PettiColors.fgDim,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
               const SizedBox(height: PettiSpacing.s5),
               Text(
                 'La suscripción se renueva automáticamente cada mes. '
@@ -196,10 +222,50 @@ class _PaywallBodyState extends State<_PaywallBody> {
                   color: PettiColors.fgDim,
                 ),
               ),
+              const SizedBox(height: PettiSpacing.s3),
+              // ToS + Privacy links — Apple's App Review checklist
+              // explicitly looks for these on the paywall when an app
+              // sells subscriptions. Same URLs as the Cuenta → Legal
+              // section so users see one canonical pair.
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _legalLink(
+                    'Términos',
+                    Uri.parse('https://mybesti.co/terms'),
+                  ),
+                  Text(
+                    ' · ',
+                    style: PettiText.body().copyWith(
+                      fontSize: 12,
+                      color: PettiColors.fgDim,
+                    ),
+                  ),
+                  _legalLink(
+                    'Privacidad',
+                    Uri.parse('https://mybesti.co/privacy'),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _legalLink(String label, Uri uri) {
+    return GestureDetector(
+      onTap: () => launchUrl(uri, mode: LaunchMode.externalApplication),
+      child: Text(
+        label,
+        style: PettiText.body().copyWith(
+          fontSize: 12,
+          color: PettiColors.midnight,
+          fontWeight: FontWeight.w600,
+          decoration: TextDecoration.underline,
+        ),
+      ),
     );
   }
 

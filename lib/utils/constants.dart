@@ -33,6 +33,20 @@ class AppConstants {
   static const String appName = 'Besti';
   static const String appVersion = '1.0.0';
   static const String supportEmail = 'soporte@pettrack.co';
+
+  // WhatsApp support: Nico's direct line. Used in two surfaces:
+  //   - Paywall ("Tengo dudas de la suscripción de Besti")
+  //   - Cuenta → Soporte ("Necesito ayuda con mi app Besti")
+  // Number in international format without the +, as wa.me requires.
+  static const String supportWhatsAppPhone = '573125220165';
+
+  /// Builds a wa.me deep link with the given prefilled message.
+  /// Uri.https handles URL encoding of the text param automatically.
+  static Uri whatsAppSupportLink(String message) => Uri.https(
+        'wa.me',
+        '/$supportWhatsAppPhone',
+        {'text': message},
+      );
   
   // Subscription Pricing (COP)
   static const int monthlyPrice = 29900;

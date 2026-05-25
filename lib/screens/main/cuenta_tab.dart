@@ -34,6 +34,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/firestore_service.dart';
+import '../../utils/constants.dart';
 import '../../utils/petti_theme.dart';
 import '../device/home_zone_setup_wizard.dart';
 import '../profile/pet_profile_screen.dart';
@@ -810,7 +811,9 @@ class _SoporteCard extends StatelessWidget {
               iconColor: const Color(0xFF25D366),
               label: 'WhatsApp soporte',
               sub: 'Lun–Sáb · 8am–8pm',
-              onTap: () => _openUrl('https://wa.me/573001234567'),
+              onTap: () => _openUrl(
+                AppConstants.whatsAppSupportLink('Necesito ayuda con mi app Besti').toString(),
+              ),
               external: true,
               isLast: true,
             ),
