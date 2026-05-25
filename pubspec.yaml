@@ -1,7 +1,7 @@
 name: pettrack_app
 description: "PetTrack - Pet GPS Tracking for Colombia"
 publish_to: 'none'
-version: 1.0.0+16
+version: 1.0.0+17
 
 environment:
   sdk: ^3.11.0
@@ -84,6 +84,10 @@ dependencies:
   url_launcher: ^6.3.1
   # UUID v4 for home-setup intent idempotency keys (Phase 1 reconciler).
   uuid: ^4.5.1
+  # In-app purchases for the Besti monthly subscription. iOS uses
+  # StoreKit; Android uses Google Play Billing. Both surfaced through
+  # a single Flutter API. See lib/providers/subscription_provider.dart.
+  in_app_purchase: ^3.2.0
 
 dev_dependencies:
   flutter_test:

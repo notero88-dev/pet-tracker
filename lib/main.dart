@@ -17,6 +17,7 @@ import 'firebase_options.dart';
 // rationale and full token list.
 import 'providers/auth_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/subscription_provider.dart';
 import 'providers/traccar_provider.dart';
 import 'screens/splash_screen.dart';
 import 'services/app_event_service.dart';
@@ -203,6 +204,12 @@ class _PetTrackAppState extends State<PetTrackApp> with WidgetsBindingObserver {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => TraccarProvider()),
+        // SubscriptionProvider owns: subscription status, IAP flow,
+        // /me + /verify-purchase calls. Initialized lazily from
+        // PettiMainTabsScreen.initState — see that file for the
+        // initialize() call. Created here at the root so the paywall
+        // (rendered from various places in the tree) can read state.
+        ChangeNotifierProvider(create: (_) => SubscriptionProvider()),
         // Reuse the eagerly-constructed instance so FCM and the widget
         // tree share the same NotificationProvider state.
         ChangeNotifierProvider.value(value: _notificationProvider),

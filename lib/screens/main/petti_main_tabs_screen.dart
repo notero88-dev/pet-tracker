@@ -31,9 +31,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/petti_theme.dart';
+import '../paywall/paywall_screen.dart';
 import 'cuenta_tab.dart';
 import 'mapa_tab.dart';
 import 'mascotas_tab.dart';
@@ -67,7 +69,13 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
     //
     // Deferred to post-first-frame so the build()'s Consumer<TraccarProvider>
     // gets a render with the initial loading state before connect resolves.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _initializeTraccar());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeTraccar();
+      // 2026-05-25: SubscriptionProvider also boots from here —
+      // single deferred-to-first-frame batch. It does its own /me
+      // fetch + wires the in_app_purchase stream listener.
+      Provider.of<SubscriptionProvider>(context, listen: false).initialize();
+    });
   }
 
   Future<void> _initializeTraccar() async {
@@ -120,6 +128,27 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 2026-05-25: full paywall takeover when the user has no live
+    // subscription. Per the IAP plan's product decisions:
+    //   - "Paywall after provisioning" → first-time users land in
+    //     PettiMainTabsScreen with status=`none` and immediately see
+    //     the paywall (no separate onboarding-paywall step needed)
+    //   - "Full paywall — nothing works" for expired users → same
+    //     treatment for `expired` / `refunded`
+    //
+    // `unknown` is the brief window before /me returns on cold launch.
+    // We DELIBERATELY pass through to the normal tabs during this
+    // window so returning subscribed users don't see a paywall flash
+    // before /me confirms their status. The worst case (expired user
+    // sees ~1s of tabs before paywall) is fine; the best case
+    // (subscribed user) gets no flicker.
+    final subStatus = context.watch<SubscriptionProvider>().status;
+    if (subStatus == SubscriptionStatus.none
+        || subStatus == SubscriptionStatus.expired
+        || subStatus == SubscriptionStatus.refunded) {
+      return const PaywallScreen();
+    }
+
     return Scaffold(
       backgroundColor: PettiColors.cloud,
       // The tab content fills the full viewport — each tab manages its

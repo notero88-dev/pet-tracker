@@ -291,62 +291,19 @@ class FirestoreService {
   }
 
   // ==================== SUBSCRIPTIONS ====================
-
-  /// Create subscription
-  Future<String> createSubscription({
-    required String plan, // 'monthly' or 'annual'
-    required String paymentMethod,
-    String? wompiTransactionId,
-  }) async {
-    if (_currentUserId == null) throw Exception('No authenticated user');
-
-    final now = DateTime.now();
-    final endDate = plan == 'annual'
-        ? now.add(Duration(days: 365))
-        : now.add(Duration(days: 30));
-
-    final subRef = await _db.collection('subscriptions').add({
-      'userId': _currentUserId,
-      'plan': plan,
-      'status': 'active',
-      'startDate': now,
-      'endDate': endDate,
-      'paymentMethod': paymentMethod,
-      'wompiTransactionId': wompiTransactionId,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-
-    return subRef.id;
-  }
-
-  /// Get active subscription for current user
-  Future<Map<String, dynamic>?> getActiveSubscription() async {
-    if (_currentUserId == null) return null;
-
-    final snapshot = await _db
-        .collection('subscriptions')
-        .where('userId', isEqualTo: _currentUserId)
-        .where('status', isEqualTo: 'active')
-        .orderBy('createdAt', descending: true)
-        .limit(1)
-        .get();
-
-    if (snapshot.docs.isEmpty) return null;
-
-    final data = snapshot.docs.first.data();
-    data['id'] = snapshot.docs.first.id;
-    return data;
-  }
-
-  /// Cancel subscription
-  Future<void> cancelSubscription(String subscriptionId) async {
-    await _db.collection('subscriptions').doc(subscriptionId).update({
-      'status': 'cancelled',
-      'cancelledAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-  }
+  //
+  // 2026-05-25: removed Firestore-side subscription CRUD
+  // (createSubscription / getActiveSubscription / cancelSubscription)
+  // along with the orphan Wompi-tagged shape. Subscription state
+  // is now owned by the Postgres `subscriptions` table on the
+  // backend, fed by Apple ASSN / Google Play RTDN webhooks. The
+  // app reads it via SubscriptionApi → /api/subscriptions/me, not
+  // Firestore. See lib/services/subscription_api.dart +
+  // lib/providers/subscription_provider.dart.
+  //
+  // The Firestore `subscriptions` collection itself still exists on
+  // the server (cheap to leave; nobody writes to it anymore) but
+  // we'll clean it up in a follow-up housekeeping commit.
 
   // ==================== NOTIFICATIONS ====================
 

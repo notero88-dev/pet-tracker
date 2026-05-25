@@ -31,6 +31,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/device.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/petti_theme.dart';
@@ -65,6 +66,10 @@ class CuentaTab extends StatelessWidget {
                 child: _SectionHeader('Mascotas y dispositivos', topPad: 24),
               ),
               SliverToBoxAdapter(child: _PetsAndDevicesList(devices: devices)),
+              const SliverToBoxAdapter(
+                child: _SectionHeader('Suscripción', topPad: 24),
+              ),
+              const SliverToBoxAdapter(child: _SubscriptionCard()),
               const SliverToBoxAdapter(child: _SectionHeader('Soporte')),
               const SliverToBoxAdapter(child: _SoporteCard()),
               const SliverToBoxAdapter(child: _SectionHeader('Legal')),
@@ -1213,5 +1218,168 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
         ),
       ],
     );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// _SubscriptionCard — shows the user's current subscription state
+// (trial / active / none / expired) + a "Gestionar suscripción" link
+// that opens Apple's Settings → Subscriptions deep link via
+// url_launcher. Apple requires this affordance for any app that
+// sells subscriptions; it also satisfies the App Review checklist
+// item for "easy cancellation."
+//
+// When the user has no live sub (status == none / expired / refunded),
+// the whole PettiMainTabsScreen renders the paywall instead of the
+// tabs, so this widget will rarely show the "no subscription" state.
+// We render it defensively anyway in case the gate ever changes.
+// -----------------------------------------------------------------------------
+
+class _SubscriptionCard extends StatelessWidget {
+  const _SubscriptionCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final sub = context.watch<SubscriptionProvider>();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: PettiColors.cloud,
+          borderRadius: BorderRadius.circular(PettiRadii.md),
+          border: Border.all(color: PettiColors.borderLight),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _renderHeader(sub),
+            const SizedBox(height: 12),
+            _renderBody(sub),
+            const SizedBox(height: 14),
+            _renderManageLink(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _renderHeader(SubscriptionProvider sub) {
+    final (label, color) = switch (sub.status) {
+      SubscriptionStatus.inTrial =>
+        ('Prueba gratuita', PettiColors.marigoldDim),
+      SubscriptionStatus.active => ('Activa', PettiColors.sabana),
+      SubscriptionStatus.billingIssue =>
+        ('Problema de pago', PettiColors.alert),
+      SubscriptionStatus.expired => ('Vencida', PettiColors.fgDim),
+      SubscriptionStatus.refunded => ('Reembolsada', PettiColors.fgDim),
+      SubscriptionStatus.none => ('Sin suscripción', PettiColors.fgDim),
+      SubscriptionStatus.unknown => ('Cargando…', PettiColors.fgDim),
+    };
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          sub.product?.title.split('(').first.trim() ?? 'Besti Mensual',
+          style: PettiText.bodyStrong().copyWith(
+            color: PettiColors.midnight,
+            fontSize: 16,
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text(
+            label,
+            style: PettiText.bodyStrong().copyWith(
+              color: color,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _renderBody(SubscriptionProvider sub) {
+    final subscription = sub.subscription;
+    if (subscription == null) {
+      return Text(
+        'Suscríbete para usar Besti.',
+        style: PettiText.body().copyWith(color: PettiColors.fgDim),
+      );
+    }
+    // Trial: show "Termina el X de Y"
+    if (sub.status == SubscriptionStatus.inTrial
+        && subscription.trialEndAt != null) {
+      return Text(
+        'Tu prueba termina el ${_friendlyDate(subscription.trialEndAt!)}. '
+        'Luego se renueva automáticamente.',
+        style: PettiText.body().copyWith(color: PettiColors.fgDim, fontSize: 13),
+      );
+    }
+    // Active: show "Próximo cobro el X"
+    if (sub.status == SubscriptionStatus.active
+        && subscription.nextRenewalAt != null) {
+      return Text(
+        'Próximo cobro el ${_friendlyDate(subscription.nextRenewalAt!)}.',
+        style: PettiText.body().copyWith(color: PettiColors.fgDim, fontSize: 13),
+      );
+    }
+    // Billing issue
+    if (sub.status == SubscriptionStatus.billingIssue) {
+      return Text(
+        'No pudimos cobrar tu suscripción. Actualiza tu método de pago '
+        'en Ajustes → Apple ID → Pago y envío.',
+        style: PettiText.body().copyWith(color: PettiColors.alert, fontSize: 13),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _renderManageLink(BuildContext context) {
+    return TextButton(
+      onPressed: () async {
+        // Apple deep link to the user's Subscriptions list. Works on
+        // any iOS device with an Apple ID; if it can't open (e.g.
+        // simulator), the launchUrl future resolves false and we
+        // fall back to a SnackBar.
+        final uri = Uri.parse('https://apps.apple.com/account/subscriptions');
+        final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (!ok && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Abre Ajustes → Apple ID → Suscripciones para gestionar.',
+              ),
+            ),
+          );
+        }
+      },
+      style: TextButton.styleFrom(
+        padding: EdgeInsets.zero,
+        minimumSize: const Size(0, 0),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: const Text(
+        'Gestionar suscripción →',
+        style: TextStyle(
+          color: PettiColors.midnight,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  String _friendlyDate(DateTime utc) {
+    final local = utc.toLocal();
+    const months = [
+      'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+      'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+    ];
+    return '${local.day} ${months[local.month - 1]}';
   }
 }
