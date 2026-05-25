@@ -26,6 +26,7 @@
 // map's Google Maps controller + the activity screen's lazy fetches
 // don't reset every time the user toggles tabs.
 
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -91,13 +92,28 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
       if (success) {
         await traccarProvider.refreshDevices();
       }
-    } catch (e) {
+    } catch (e, stack) {
       // Network blip, expired creds, no device yet — each tab's empty
       // state handles the missing-devices case. We just log and move on.
+      //
       // 2026-05-24: a permission-denied here once meant Firestore Security
       // Rules were broken (the default 30-day trial expired). See
       // `pettrack-backend/firebase/firestore.rules` for the deployed
       // rules + the deploy script in push-service/scripts/.
+      //
+      // Also report to Crashlytics as a NON-FATAL — fatal=false because
+      // the app continues to function (just renders the empty Mapa); we
+      // only want this to show up in the Firebase Console dashboard as
+      // a recurring class of issue so we notice 50 users hitting
+      // permission-denied before they email us. recordError attaches a
+      // `reason` so we can filter by it in the Crashlytics UI.
+      FirebaseCrashlytics.instance.recordError(
+        e,
+        stack,
+        reason: '_initializeTraccar — failed to load Traccar credentials '
+            'and/or connect to Traccar',
+        fatal: false,
+      );
       debugPrint('[PettiMainTabs] Traccar init failed: $e');
     }
   }
