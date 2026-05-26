@@ -35,6 +35,7 @@ import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
 import '../../services/app_event_service.dart';
 import '../../services/device_command_events.dart';
+import '../../services/firestore_service.dart';
 import '../../services/provisioning_api.dart';
 import '../../services/reverse_geocoder.dart';
 import '../../services/wizard_step_result.dart';
@@ -130,11 +131,51 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   /// Same pattern as the home-screen pet card so both surfaces agree.
   String? _nearestPlace;
 
+  /// Firestore-side pet name, resolved by matching `traccarDeviceId`.
+  /// Null while the Firestore lookup is in flight; falls back to the
+  /// Traccar device name via [_displayName] so the UI always renders a
+  /// label even before the Firestore round-trip completes.
+  ///
+  /// Why this exists: Mascotas / Salud / Cuenta read pets from Firestore
+  /// (where the user-entered display name lives) while Mapa historically
+  /// read the Traccar device name. The two diverge whenever the user
+  /// renames their pet from the app — Firestore updates, Traccar device
+  /// row keeps its original name, Mapa shows the stale label. Resolving
+  /// against Firestore here makes Mapa consistent with the rest of the
+  /// app. (2026-05-25 bug #3 in the post-IAP-submit cleanup pass.)
+  String? _petName;
+
+  /// User-facing pet name. Firestore (source of truth) → Traccar device
+  /// name (fallback during loading or if Firestore has no matching pet).
+  String get _displayName =>
+      _petName?.isNotEmpty == true ? _petName! : widget.device.name;
+
   @override
   void initState() {
     super.initState();
     _loadCurrentPosition();
     _startNormalUpdates();
+    _loadPetName();
+  }
+
+  /// Resolve the Firestore pet name for this device. Best-effort — any
+  /// network/permission failure leaves [_petName] null and the fallback
+  /// to [Device.name] kicks in transparently via [_displayName].
+  Future<void> _loadPetName() async {
+    try {
+      final pets = await FirestoreService().getUserPets();
+      final match = pets.firstWhere(
+        (p) => p['traccarDeviceId'] == widget.device.traccarId,
+        orElse: () => <String, dynamic>{},
+      );
+      final name = match['name'];
+      if (name is String && name.isNotEmpty && mounted) {
+        setState(() => _petName = name);
+      }
+    } catch (_) {
+      // Silent fallback to _displayName — already the behavior
+      // for any account that doesn't have a Firestore pet doc yet.
+    }
   }
 
   @override
@@ -320,7 +361,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           BitmapDescriptor.hueOrange,
         ),
         infoWindow: InfoWindow(
-          title: widget.device.name,
+          title: _displayName,
           snippet: position.address ?? position.coordinatesText,
         ),
       ),
@@ -586,7 +627,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   void _showQueuedFallbackMessage() {
     if (!mounted) return;
     setState(() => _isFlippingMode = false);
-    final petName = widget.device.name.isNotEmpty ? widget.device.name : 'tu mascota';
+    final petName = _displayName.isNotEmpty ? _displayName : 'tu mascota';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(
         'En vivo se activará cuando $petName se mueva. Te avisaremos en cuanto pase.',
@@ -605,9 +646,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     // 2026-05-19 — the previous one-size copy said "modo casa" even
     // when the dog wasn't anywhere near home, which was confusing.
     final disableBody = _isInHomeZone
-        ? '${widget.device.name} volverá a su modo de casa (ahorro de '
+        ? '$_displayName volverá a su modo de casa (ahorro de '
             'batería). Solo te avisaremos si sale de la zona segura.'
-        : '${widget.device.name} volverá a su modo normal. Mientras se '
+        : '$_displayName volverá a su modo normal. Mientras se '
             'mueva, reportará su ubicación cada 5 minutos. Cuando esté '
             'quieta, descansará para cuidar la batería.';
     final result = await showDialog<bool>(
@@ -616,7 +657,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         title: Text(enabling ? '¿Activar modo de búsqueda?' : '¿Volver a modo normal?'),
         content: Text(
           enabling
-              ? '${widget.device.name} reportará su ubicación en tiempo real. La batería '
+              ? '$_displayName reportará su ubicación en tiempo real. La batería '
                   'se consumirá mucho más rápido — apaga este modo cuando '
                   'la encuentres.'
               : disableBody,
@@ -632,7 +673,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               backgroundColor: enabling ? PettiColors.alert : PettiColors.sabana,
               foregroundColor: PettiColors.cloud,
             ),
-            child: Text(enabling ? 'Buscar a ${widget.device.name}' : 'Volver a normal'),
+            child: Text(enabling ? 'Buscar a $_displayName' : 'Volver a normal'),
           ),
         ],
       ),
@@ -643,7 +684,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   void _showModeFlipError(WizardStepResult result, bool wasEnabling) {
     String message;
     final petName =
-        widget.device.name.isNotEmpty ? widget.device.name : 'tu mascota';
+        _displayName.isNotEmpty ? _displayName : 'tu mascota';
     if (result is WizardStepDeviceOffline) {
       message = 'No estamos detectando a $petName. Verifica que esté encendida.';
     } else if (result is WizardStepTimedOut) {
@@ -666,7 +707,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   }
 
   void _showModeFlipSuccess(bool enabling) {
-    final name = widget.device.name;
+    final name = _displayName;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       // We optimistically flipped _isLiveMode on a 200 from the API, but the
       // 200 just means the command was dispatched (TCP queue or SMS) — the
@@ -917,7 +958,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      widget.device.name,
+                      _displayName,
                       style: PettiText.h4(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -995,7 +1036,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
               MaterialPageRoute(
                 builder: (_) => DeviceSettingsScreen(
                   device: widget.device,
-                  petName: widget.device.name,
+                  petName: _displayName,
                   isOnline: _currentPosition != null,
                   lastSeen: _currentPosition?.deviceTime,
                   // 2026-05-12: was `_currentPosition?.attributes?['batteryLevel']
@@ -1127,7 +1168,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                     isLive: _isLiveMode,
                     isLoading: _isFlippingMode,
                     isAwaitingDevice: _pendingQueueId != null,
-                    petName: widget.device.name,
+                    petName: _displayName,
                     onTap: _isFlippingMode ? null : _toggleLiveMode,
                   ),
                 ),
@@ -1166,7 +1207,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   Expanded(
                     child: Text(
                       'El modo de búsqueda se activará cuando '
-                      '${widget.device.name} se mueva.',
+                      '$_displayName se mueva.',
                       style: PettiText.bodySm().copyWith(
                         color: PettiColors.fgDim,
                       ),

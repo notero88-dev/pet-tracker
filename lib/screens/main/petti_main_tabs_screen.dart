@@ -99,6 +99,23 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
       final success = await traccarProvider.connect(email, password);
       if (success) {
         await traccarProvider.refreshDevices();
+        // 2026-05-25: reconcile Firestore pets against Traccar devices.
+        // Handles the "user has a backend device but no Firestore pet
+        // doc" case, which surfaces as Mascotas / Salud showing empty
+        // even though Mapa renders a device. Causes:
+        //   - Demo / review accounts seeded by setup-review-account.sh
+        //     (the script creates Postgres + Traccar but skips Firestore).
+        //   - Users who reinstall the app: pet_profile_screen.createPet()
+        //     only fires during fresh provisioning; on a re-install
+        //     after deletion the onboarding flow detects the
+        //     pre-provisioned device and skips that step.
+        //   - Manual admin tools / scripts that create Traccar devices.
+        //
+        // The reconciler is forward-only (device exists → ensure pet
+        // exists); never deletes Firestore pets that no longer have a
+        // matching device — they could be petless profiles the user
+        // wants to keep.
+        await _reconcileFirestorePets(traccarProvider);
       }
     } catch (e, stack) {
       // Network blip, expired creds, no device yet — each tab's empty
@@ -123,6 +140,68 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
         fatal: false,
       );
       debugPrint('[PettiMainTabs] Traccar init failed: $e');
+    }
+  }
+
+  /// Forward-only reconciler: ensures every Traccar device the user owns
+  /// has a corresponding Firestore pet doc. Idempotent — only creates
+  /// when no match exists for a given traccarDeviceId.
+  ///
+  /// Best-effort: any single device's failure is logged + recorded as a
+  /// non-fatal in Crashlytics, but doesn't abort the loop for other
+  /// devices. The app continues to function with the partial-state
+  /// (whatever Firestore pets DID load).
+  Future<void> _reconcileFirestorePets(TraccarProvider traccar) async {
+    try {
+      final firestore = FirestoreService();
+      final existingPets = await firestore.getUserPets();
+      final existingDeviceIds = existingPets
+          .map((p) => p['traccarDeviceId'])
+          .whereType<int>()
+          .toSet();
+
+      for (final device in traccar.devices) {
+        final traccarId = device.traccarId;
+        if (traccarId == null) continue;
+        if (existingDeviceIds.contains(traccarId)) continue;
+
+        // No Firestore pet for this device. Create a placeholder using
+        // the Traccar device name as a sensible default. User can rename
+        // later from Mascotas → este pet → Editar perfil. We default
+        // type='dog' because that's the dominant species at v1 launch;
+        // the user can change to 'cat' / other from the same edit screen.
+        try {
+          await firestore.createPet(
+            name: device.name.isNotEmpty ? device.name : 'Mi mascota',
+            type: 'dog',
+            traccarDeviceId: traccarId,
+            deviceImei: device.uniqueId,
+          );
+          debugPrint(
+            '[PettiMainTabs] reconciled pet for device $traccarId '
+            '(name=${device.name})',
+          );
+        } catch (e, stack) {
+          FirebaseCrashlytics.instance.recordError(
+            e,
+            stack,
+            reason: '_reconcileFirestorePets — createPet failed for '
+                'device $traccarId (${device.uniqueId})',
+            fatal: false,
+          );
+        }
+      }
+    } catch (e, stack) {
+      // Lookup itself failed (network / permission). Log + move on —
+      // the user still sees Mapa (devices loaded) but Mascotas / Salud
+      // tabs may show stale state until next launch.
+      FirebaseCrashlytics.instance.recordError(
+        e,
+        stack,
+        reason: '_reconcileFirestorePets — getUserPets failed',
+        fatal: false,
+      );
+      debugPrint('[PettiMainTabs] pet reconciliation failed: $e');
     }
   }
 
