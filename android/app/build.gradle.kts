@@ -72,7 +72,15 @@ android {
             create("release") {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
+                // Resolve relative to `android/` (rootProject), NOT the app
+                // module dir. key.properties itself is loaded via
+                // rootProject.file() above, and its storeFile value
+                // (`keystore/pettrack-release.keystore`) is written relative to
+                // `android/`. Plain file() here resolved against `android/app/`
+                // → `android/app/keystore/...` which doesn't exist, failing
+                // :app:validateSigningRelease. (Caught 2026-05-27 on the first
+                // real release AAB build.)
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
                 storePassword = keystoreProperties["storePassword"] as String
             }
         }
