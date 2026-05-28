@@ -63,4 +63,36 @@ class Device {
         return 'Desconocido';
     }
   }
+
+  /// Return the non-null `traccarId`, throwing a clear `StateError`
+  /// with the IMEI baked into the message when it is null. Prefer this
+  /// to `device.requireTraccarId()` everywhere — the bang operator's
+  /// `_TypeError: Null check operator used on a null value` is
+  /// impossible to attribute to a specific device, but a `StateError`
+  /// from here points straight at the row that's missing its
+  /// provisioning.
+  ///
+  /// `traccarId` is null when:
+  ///   1. `provisionDevice` was called with an existing IMEI and the
+  ///      backend returned the idempotent 200 path without
+  ///      re-emitting credentials (the constructed Device then carries
+  ///      whatever id we already had — sometimes null).
+  ///   2. A pet row in Firestore is ahead of postgres / Traccar (rare
+  ///      but possible during partial onboarding aborts).
+  ///
+  /// Callers that can recover (e.g. show a "not ready" placeholder
+  /// instead of crashing) should still null-check `traccarId` directly
+  /// at the call site — this helper is for paths that have no
+  /// recovery and must fail loudly.
+  int requireTraccarId() {
+    final id = traccarId;
+    if (id == null) {
+      throw StateError(
+        'Device $uniqueId has no Traccar ID yet (status=$status). '
+        'This usually means provisioning is pending or returned the '
+        'idempotent 200 path without credentials.',
+      );
+    }
+    return id;
+  }
 }

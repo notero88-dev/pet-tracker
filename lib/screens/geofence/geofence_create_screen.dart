@@ -64,7 +64,7 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
 
   Future<void> _loadDevicePosition() async {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
-    final position = traccar.getLastPosition(widget.device.traccarId!);
+    final position = traccar.getLastPosition(widget.device.requireTraccarId());
     if (position != null && mounted) {
       setState(() {
         _center = LatLng(position.latitude, position.longitude);
@@ -338,7 +338,7 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
           geofenceId: widget.editGeofence!.id,
           name: _nameController.text.trim(),
           area: _buildWKT(),
-          deviceId: widget.device.traccarId!,
+          deviceId: widget.device.requireTraccarId(),
         );
       } else {
         final geofenceId = await traccar.createCircularGeofence(
@@ -346,7 +346,7 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
           latitude: _center!.latitude,
           longitude: _center!.longitude,
           radiusMeters: _radiusMeters,
-          deviceId: widget.device.traccarId!,
+          deviceId: widget.device.requireTraccarId(),
         );
         success = geofenceId != null;
       }

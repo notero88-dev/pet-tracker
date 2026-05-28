@@ -1,9 +1,33 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show SocketException;
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 import '../utils/constants.dart';
 import '../models/device.dart';
 import 'wizard_step_result.dart';
+
+/// Default HTTP timeout for the provisioning-api client.
+///
+/// Picked at 20s to cover the slow tail of `/provision` (Traccar
+/// user+device creation + Firebase mirror + a SQL write — sometimes
+/// 8-10s end-to-end on a cold Postgres pool). 20s gives that headroom
+/// while still failing hard if the backend is genuinely unreachable,
+/// rather than the previous behavior of hanging forever and showing a
+/// permanent spinner. See A-9 in
+/// docs/plans/glowing-greeting-journal.md.
+const Duration _defaultHttpTimeout = Duration(seconds: 20);
+
+/// `Exception` types that mean "the network round-trip didn't complete"
+/// vs "the server returned an error we should surface verbatim." Only
+/// these get wrapped as "Error de conexión" — anything else (including
+/// already-formed `Exception('IMEI already registered')` style server
+/// rejections) is rethrown as-is.
+bool _isTransportException(Object e) =>
+    e is SocketException ||
+    e is TimeoutException ||
+    e is http.ClientException;
 
 /// Client for PetTrack Provisioning API
 class ProvisioningApi {
@@ -64,26 +88,28 @@ class ProvisioningApi {
           ? phone
           : '+573000000000';
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/provision'),
-        headers: await _authHeaders(),
-        body: jsonEncode({
-          'email': userEmail,
-          'phone': phoneToSend,
-          'deviceImei': imei,
-          'petName': petName,
-        }),
-      );
+      final response = await _http
+          .post(
+            Uri.parse('$baseUrl/provision'),
+            headers: await _authHeaders(),
+            body: jsonEncode({
+              'email': userEmail,
+              'phone': phoneToSend,
+              'deviceImei': imei,
+              'petName': petName,
+            }),
+          )
+          .timeout(_defaultHttpTimeout);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
-        
+
         // Backend returns: { success, userId, deviceId, message, credentials }
         if (data['success'] == true && data['deviceId'] != null) {
           // Store credentials for future use (returned via exception/callback)
           // Note: Credentials are in data['credentials'] = { email, password }
           _lastProvisionedCredentials = data['credentials'];
-          
+
           // Construct Device object from response
           return Device(
             id: data['deviceId'], // Use Traccar device ID as primary ID
@@ -103,7 +129,15 @@ class ProvisioningApi {
         throw Exception(error['error'] ?? error['message'] ?? 'Error al aprovisionar dispositivo');
       }
     } catch (e) {
-      throw Exception('Error de conexión: $e');
+      // Narrow the "conexión" wrap to actual transport failures so the
+      // UI no longer misattributes server validation errors (e.g.
+      // "IMEI already registered") as connection problems. Previously
+      // every Exception was wrapped, producing the confusing
+      // "Error de conexión: Exception: IMEI already registered".
+      if (_isTransportException(e)) {
+        throw Exception('Error de conexión: $e');
+      }
+      rethrow;
     }
   }
   
@@ -125,7 +159,7 @@ class ProvisioningApi {
     required String token,
   }) async {
     try {
-      final response = await http.post(
+      final response = await _http.post(
         Uri.parse('$baseUrl/fcm-token'),
         headers: await _authHeaders(),
         body: jsonEncode({'email': email, 'token': token}),
@@ -193,10 +227,12 @@ class ProvisioningApi {
   /// }
   Future<Map<String, dynamic>> getDeviceStatus(int traccarDeviceId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/device-status/$traccarDeviceId'),
-        headers: await _authHeaders(),
-      );
+      final response = await _http
+          .get(
+            Uri.parse('$baseUrl/device-status/$traccarDeviceId'),
+            headers: await _authHeaders(),
+          )
+          .timeout(_defaultHttpTimeout);
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -205,7 +241,10 @@ class ProvisioningApi {
         throw Exception(error['error'] ?? 'Error al obtener estado del dispositivo');
       }
     } catch (e) {
-      throw Exception('Error de conexión: $e');
+      if (_isTransportException(e)) {
+        throw Exception('Error de conexión: $e');
+      }
+      rethrow;
     }
   }
 
@@ -224,14 +263,16 @@ class ProvisioningApi {
     Map<String, dynamic>? attributes,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/send-command/$traccarDeviceId'),
-        headers: await _authHeaders(),
-        body: jsonEncode({
-          'type': type,
-          'attributes': attributes ?? {},
-        }),
-      );
+      final response = await _http
+          .post(
+            Uri.parse('$baseUrl/send-command/$traccarDeviceId'),
+            headers: await _authHeaders(),
+            body: jsonEncode({
+              'type': type,
+              'attributes': attributes ?? {},
+            }),
+          )
+          .timeout(_defaultHttpTimeout);
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -240,7 +281,10 @@ class ProvisioningApi {
         throw Exception(error['error'] ?? 'Error al enviar comando');
       }
     } catch (e) {
-      throw Exception('Error de conexión: $e');
+      if (_isTransportException(e)) {
+        throw Exception('Error de conexión: $e');
+      }
+      rethrow;
     }
   }
 
@@ -264,9 +308,9 @@ class ProvisioningApi {
   /// Health check
   Future<bool> healthCheck() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/health'),
-      );
+      final response = await _http
+          .get(Uri.parse('$baseUrl/health'))
+          .timeout(const Duration(seconds: 5));
       return response.statusCode == 200;
     } catch (e) {
       return false;

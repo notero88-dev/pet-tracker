@@ -43,7 +43,7 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
     await traccar.loadGeofences();
     if (mounted) {
       setState(() {
-        _geofences = traccar.getGeofencesForDevice(widget.device.traccarId!);
+        _geofences = traccar.getGeofencesForDevice(widget.device.requireTraccarId());
         _isLoading = false;
       });
     }

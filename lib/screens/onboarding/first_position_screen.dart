@@ -105,7 +105,7 @@ class _FirstPositionScreenState extends State<FirstPositionScreen>
     if (!mounted || _firstPosition != null) return;
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     await traccar.refreshDevices();
-    final position = traccar.getLastPosition(widget.device.traccarId!);
+    final position = traccar.getLastPosition(widget.device.requireTraccarId());
     if (position != null && mounted) {
       setState(() => _firstPosition = position);
       _pollTimer?.cancel();

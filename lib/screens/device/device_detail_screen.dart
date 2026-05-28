@@ -191,7 +191,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
   void _loadCurrentPosition() {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
-    final position = traccar.getLastPosition(widget.device.traccarId!);
+    final position = traccar.getLastPosition(widget.device.requireTraccarId());
     if (position != null) {
       setState(() {
         _currentPosition = position;
@@ -333,7 +333,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     await traccar.refreshDevices();
 
-    final position = traccar.getLastPosition(widget.device.traccarId!);
+    final position = traccar.getLastPosition(widget.device.requireTraccarId());
     if (position != null && mounted) {
       setState(() {
         _currentPosition = position;
@@ -502,7 +502,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       if (enabling) {
         _startLiveUpdates();
         final traccar = Provider.of<TraccarProvider>(context, listen: false);
-        traccar.requestPositionNow(widget.device.traccarId!);
+        traccar.requestPositionNow(widget.device.requireTraccarId());
       } else {
         _startNormalUpdates();
       }
@@ -556,7 +556,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     _startLiveUpdates();
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     if (widget.device.traccarId != null) {
-      traccar.requestPositionNow(widget.device.traccarId!);
+      traccar.requestPositionNow(widget.device.requireTraccarId());
     }
     _showModeFlipSuccess(true);
   }
@@ -787,6 +787,66 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             left: 0,
             right: 0,
             child: SafeArea(child: _buildHeader()),
+          ),
+
+          // "Reconectando…" pill — shown only when the Traccar
+          // WebSocket is in the reconnecting state. Previously the
+          // socket could die silently (Wi-Fi handoff, iOS suspend,
+          // Traccar restart) and the map would degrade to the slow
+          // REST poll with zero UI feedback; the user assumed live
+          // was still working. Listens to TraccarProvider via
+          // Consumer to avoid rebuilding the whole screen on
+          // unrelated state changes.
+          Positioned(
+            top: kToolbarHeight + 12,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              top: false,
+              child: Center(
+                child: Consumer<TraccarProvider>(
+                  builder: (context, traccar, _) {
+                    if (traccar.connectionStatus !=
+                        TraccarConnectionStatus.reconnecting) {
+                      return const SizedBox.shrink();
+                    }
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: PettiSpacing.s3,
+                        vertical: PettiSpacing.s2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: PettiColors.midnight.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(
+                                PettiColors.cloud,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: PettiSpacing.s2),
+                          Text(
+                            'Reconectando…',
+                            style: PettiText.body().copyWith(
+                              color: PettiColors.cloud,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
           ),
 
           // History viewer (when active)
@@ -1277,7 +1337,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     final history = await traccar.loadPositionHistory(
-      deviceId: widget.device.traccarId!,
+      deviceId: widget.device.requireTraccarId(),
       from: yesterday,
       to: now,
     );

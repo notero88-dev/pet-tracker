@@ -26,6 +26,8 @@
 // map's Google Maps controller + the activity screen's lazy fetches
 // don't reset every time the user toggles tabs.
 
+import 'dart:io' show Platform;
+
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -222,9 +224,21 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
     // sees ~1s of tabs before paywall) is fine; the best case
     // (subscribed user) gets no flicker.
     final subStatus = context.watch<SubscriptionProvider>().status;
-    if (subStatus == SubscriptionStatus.none
-        || subStatus == SubscriptionStatus.expired
+    // Android-specific relaxation (v1): the Play Billing flow isn't
+    // shippable yet (see PaywallScreen platform gate + the backend's
+    // 501 for google_play in /verify-purchase). If we still threw up
+    // the full-screen takeover on Android, existing iOS subscribers
+    // who happen to install on an Android device would get locked out
+    // entirely, AND trial customers we manually granted access to
+    // (sandbox / dogfooding) would hit a wall they can't pay through.
+    // Drop the takeover on Android for `none` only, until the Android
+    // money path is live. We still gate on `expired`/`refunded` so a
+    // user whose subscription truly lapsed doesn't get full access.
+    if (subStatus == SubscriptionStatus.expired
         || subStatus == SubscriptionStatus.refunded) {
+      return const PaywallScreen();
+    }
+    if (subStatus == SubscriptionStatus.none && Platform.isIOS) {
       return const PaywallScreen();
     }
 

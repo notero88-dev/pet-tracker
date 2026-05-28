@@ -75,7 +75,22 @@ SubscriptionStatus _statusFromString(String s) {
       // refunded keeps the enum smaller.
       return SubscriptionStatus.refunded;
     default:
-      return SubscriptionStatus.none;
+      // Unknown string from the backend → fall back to `unknown`, NOT
+      // `none`. `none` triggers the full-screen paywall takeover;
+      // mapping a brand-new backend status (e.g. a future `paused` or
+      // `suspended` introduced in v2) to `none` would silently lock
+      // paying users out the day the new status starts showing up in
+      // /me responses. `unknown` keeps the prior state in
+      // refreshFromBackend's catch path and lets the next legitimate
+      // refresh recover.
+      // ignore: avoid_print
+      assert(() {
+        debugPrint(
+          'SubscriptionProvider: unknown subscription status "$s" — treating as unknown',
+        );
+        return true;
+      }());
+      return SubscriptionStatus.unknown;
   }
 }
 
@@ -93,6 +108,17 @@ class SubscriptionProvider extends ChangeNotifier {
 
   StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
   bool _isInitialized = false;
+
+  /// Safety timer for startPurchase(). If StoreKit / Play Billing
+  /// drops the purchase event (network blip during the sheet, app
+  /// backgrounded mid-sheet, etc.) the purchaseStream listener may
+  /// never fire and `_isPurchaseInFlight` would otherwise stay true
+  /// indefinitely — the CTA button stays a permanent spinner with
+  /// no recovery short of force-quitting the app. The timer ensures
+  /// the flag is cleared after `_purchaseSafetyTimeout` so the user
+  /// can retry / restore. Cancelled on any terminal stream event.
+  Timer? _purchaseSafetyTimer;
+  static const Duration _purchaseSafetyTimeout = Duration(seconds: 60);
 
   // ── Public state ─────────────────────────────────────────────────
 
@@ -156,7 +182,27 @@ class SubscriptionProvider extends ChangeNotifier {
   @override
   void dispose() {
     _purchaseSub?.cancel();
+    _purchaseSafetyTimer?.cancel();
     super.dispose();
+  }
+
+  /// Called from the root WidgetsBindingObserver on
+  /// AppLifecycleState.resumed. If the user backgrounded the app
+  /// mid-purchase (a common way to silently break the IAP stream),
+  /// clear the in-flight flag so the paywall can be tapped again
+  /// and re-pull the canonical /me state. A purchase that actually
+  /// completed in the meantime will land on the stream listener
+  /// either way — _onPurchaseUpdates doesn't gate on
+  /// _isPurchaseInFlight to run.
+  void handleAppResumed() {
+    if (_isPurchaseInFlight) {
+      _purchaseSafetyTimer?.cancel();
+      _isPurchaseInFlight = false;
+      notifyListeners();
+    }
+    // Always pull canonical state on resume — the IAP webhook may
+    // have landed while the app was backgrounded.
+    unawaited(refreshFromBackend());
   }
 
   // ── Public actions ───────────────────────────────────────────────
@@ -219,6 +265,11 @@ class SubscriptionProvider extends ChangeNotifier {
     }
     _isPurchaseInFlight = true;
     _lastError = null;
+    // Start the safety timer BEFORE we await — if the await itself
+    // hangs we still get the auto-clear. Reset on every call so a
+    // user tapping retry after a stale state gets a fresh 60s window.
+    _purchaseSafetyTimer?.cancel();
+    _purchaseSafetyTimer = Timer(_purchaseSafetyTimeout, _onPurchaseSafetyTimeout);
     notifyListeners();
     try {
       final param = PurchaseParam(productDetails: product);
@@ -231,8 +282,26 @@ class SubscriptionProvider extends ChangeNotifier {
     } catch (e) {
       _lastError = 'No pudimos iniciar la compra: $e';
       _isPurchaseInFlight = false;
+      _purchaseSafetyTimer?.cancel();
+      _purchaseSafetyTimer = null;
       notifyListeners();
     }
+  }
+
+  /// Fires when the safety timer elapses without any terminal stream
+  /// event. Conservatively clears the in-flight flag and surfaces an
+  /// actionable message. A purchase that actually completes later
+  /// will still process correctly via _onPurchaseUpdates — we don't
+  /// gate that path on _isPurchaseInFlight.
+  void _onPurchaseSafetyTimeout() {
+    if (!_isPurchaseInFlight) return; // already resolved cleanly
+    _isPurchaseInFlight = false;
+    _lastError = 'No pudimos completar la compra. Reintenta o usa '
+        '"Restaurar compra" si ya pagaste.';
+    if (kDebugMode) {
+      debugPrint('SubscriptionProvider: purchase safety timeout fired');
+    }
+    notifyListeners();
   }
 
   /// User tapped "Restaurar compra" on the paywall. Useful for users
@@ -277,12 +346,16 @@ class SubscriptionProvider extends ChangeNotifier {
             await _iap.completePurchase(purchase);
           }
           _isPurchaseInFlight = false;
+          _purchaseSafetyTimer?.cancel();
+          _purchaseSafetyTimer = null;
           notifyListeners();
           break;
 
         case PurchaseStatus.error:
           _lastError = purchase.error?.message ?? 'Error desconocido durante la compra';
           _isPurchaseInFlight = false;
+          _purchaseSafetyTimer?.cancel();
+          _purchaseSafetyTimer = null;
           if (purchase.pendingCompletePurchase) {
             await _iap.completePurchase(purchase);
           }
@@ -293,6 +366,8 @@ class SubscriptionProvider extends ChangeNotifier {
           // User dismissed the sheet without buying. No error UI.
           _lastError = null;
           _isPurchaseInFlight = false;
+          _purchaseSafetyTimer?.cancel();
+          _purchaseSafetyTimer = null;
           if (purchase.pendingCompletePurchase) {
             await _iap.completePurchase(purchase);
           }
@@ -302,40 +377,83 @@ class SubscriptionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _verifyAndRefresh(PurchaseDetails purchase) async {
-    try {
-      // For iOS StoreKit 2, `serverVerificationData` is the signed
-      // transaction JWT — exactly what our backend's
-      // appleReceiptVerifier expects. For older StoreKit 1 + Android
-      // this is a different format (raw receipt blob / purchase
-      // token JSON) which our backend doesn't currently understand.
-      // v1 = iOS-only; Phase C+ wires Android.
-      final provider = _platformProvider();
-      if (provider == 'google_play') {
-        // Defensive: the backend returns 501 for google_play in v1.
-        // Refresh /me after a delay in case the RTDN webhook already
-        // landed and grew the row.
-        if (kDebugMode) debugPrint('SubscriptionProvider: google_play verify not implemented in v1');
-        await Future<void>.delayed(const Duration(seconds: 3));
-        await refreshFromBackend();
-        return;
-      }
+  /// Retry schedule for the iOS verify-purchase call. The Apple
+  /// transaction stays in `pendingCompletePurchase` until we call
+  /// `_iap.completePurchase`, so retrying the backend call is safe —
+  /// the worst that happens is the user sees "Reintentando…" for a
+  /// few extra seconds while we recover from a 5xx blip. After the
+  /// last attempt fails we fall back to a /me refresh in case the
+  /// ASSN webhook already landed.
+  static const List<Duration> _verifyRetryDelays = [
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 8),
+  ];
 
-      final updated = await _api.verifyPurchase(
-        provider: provider,
-        productId: purchase.productID,
-        signedTransactionInfo: purchase.verificationData.serverVerificationData,
-      );
-      _subscription = updated;
-      _status = _statusFromString(updated.status);
-      _lastError = null;
-    } catch (e) {
-      _lastError = 'No pudimos verificar la compra con el servidor. '
-          'Si te cobraron, escríbenos a soporte.';
-      if (kDebugMode) debugPrint('SubscriptionProvider: verifyPurchase failed: $e');
-      // Fall back to a /me refresh — maybe the webhook beat us to it.
+  Future<void> _verifyAndRefresh(PurchaseDetails purchase) async {
+    // For iOS StoreKit 2, `serverVerificationData` is the signed
+    // transaction JWT — exactly what our backend's
+    // appleReceiptVerifier expects. For older StoreKit 1 + Android
+    // this is a different format (raw receipt blob / purchase
+    // token JSON) which our backend doesn't currently understand.
+    // v1 = iOS-only; Phase C+ wires Android.
+    final provider = _platformProvider();
+    if (provider == 'google_play') {
+      // Defensive: the backend returns 501 for google_play in v1.
+      // Refresh /me after a delay in case the RTDN webhook already
+      // landed and grew the row. The paywall UI now hides the Android
+      // CTA outright (see paywall_screen.dart), so this branch is a
+      // belt-and-suspenders guard for any orphaned restored purchase.
+      if (kDebugMode) {
+        debugPrint('SubscriptionProvider: google_play verify not implemented in v1');
+      }
+      await Future<void>.delayed(const Duration(seconds: 3));
       await refreshFromBackend();
+      return;
     }
+
+    // iOS: try the verify call up to 4 times (1 initial + 3 retries).
+    // Surface "Reintentando…" copy between attempts so a paying user
+    // sees progress instead of an apparent freeze on a transient 5xx.
+    final maxAttempts = 1 + _verifyRetryDelays.length;
+    Object? lastError;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final updated = await _api.verifyPurchase(
+          provider: provider,
+          productId: purchase.productID,
+          signedTransactionInfo:
+              purchase.verificationData.serverVerificationData,
+        );
+        _subscription = updated;
+        _status = _statusFromString(updated.status);
+        _lastError = null;
+        return;
+      } catch (e) {
+        lastError = e;
+        if (kDebugMode) {
+          debugPrint(
+            'SubscriptionProvider: verifyPurchase attempt ${attempt + 1}/$maxAttempts failed: $e',
+          );
+        }
+        if (attempt < _verifyRetryDelays.length) {
+          _lastError = 'Reintentando verificación…';
+          notifyListeners();
+          await Future<void>.delayed(_verifyRetryDelays[attempt]);
+        }
+      }
+    }
+
+    // All attempts exhausted. Surface the support message and fall
+    // back to /me — the ASSN webhook may have written the row in the
+    // meantime, which gets us out of the bad state without user
+    // intervention.
+    _lastError = 'No pudimos verificar la compra con el servidor. '
+        'Si te cobraron, escríbenos a soporte.';
+    if (kDebugMode) {
+      debugPrint('SubscriptionProvider: verifyPurchase exhausted: $lastError');
+    }
+    await refreshFromBackend();
   }
 
   String _platformProvider() {

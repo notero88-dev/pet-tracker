@@ -45,7 +45,7 @@ class _PositionHistoryViewerState extends State<PositionHistoryViewer> {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),
@@ -116,7 +116,7 @@ class _PositionHistoryViewerState extends State<PositionHistoryViewer> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF2D6A4F).withOpacity(0.1) : Colors.grey[50],
+          color: isSelected ? const Color(0xFF2D6A4F).withValues(alpha: 0.1) : Colors.grey[50],
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected ? const Color(0xFF2D6A4F) : Colors.transparent,
@@ -200,7 +200,7 @@ class _PositionHistoryViewerState extends State<PositionHistoryViewer> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _getAccuracyColor(position.accuracy!).withOpacity(0.1),
+                  color: _getAccuracyColor(position.accuracy!).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(

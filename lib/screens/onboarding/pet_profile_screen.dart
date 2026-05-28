@@ -114,7 +114,7 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
               const SizedBox(height: PettiSpacing.s4),
 
               DropdownButtonFormField<String>(
-                value: _petType,
+                initialValue: _petType,
                 decoration: const InputDecoration(
                   labelText: 'Tipo de mascota *',
                   prefixIcon: Icon(Icons.category_outlined),

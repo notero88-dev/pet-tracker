@@ -68,5 +68,38 @@
 	-->
 	<key>com.apple.developer.networking.HotspotConfiguration</key>
 	<true/>
+
+	<!--
+		Push Notifications (APNs) capability. REQUIRED for FCM to
+		work on real iOS devices — without this entitlement iOS
+		never registers for remote notifications, so
+		`FirebaseMessaging.getToken()` hangs indefinitely (see the
+		`unawaited()` workaround in lib/providers/auth_provider.dart
+		that exists exactly to mask this gap) and zero pushes ever
+		arrive on hardware. The geofence-exit alert — our flagship
+		safety feature — is silently dead without this.
+
+		Value `development` is correct for Debug / TestFlight
+		internal builds; Xcode and Transporter automatically
+		rewrite it to `production` when uploading an App Store
+		build, so we don't need a separate Release.entitlements.
+
+		The matching capability MUST also be enabled on the Apple
+		Developer App ID `co.pettrack.pettrackApp`:
+		  Identifiers → App ID `co.pettrack.pettrackApp` → Edit →
+		  Push Notifications → check the box → Save.
+		If the entitlement is here but the App ID lacks the
+		capability, automatic signing fails with
+		"Provisioning profile doesn't include the aps-environment
+		entitlement."
+
+		Audit history:
+		  - 2026-05-20 push notification audit flagged this as a
+		    critical iOS gap (obs #10).
+		  - 2026-05-27 code review confirmed the gap (obs #1005).
+		  - 2026-05-28 added in this commit.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

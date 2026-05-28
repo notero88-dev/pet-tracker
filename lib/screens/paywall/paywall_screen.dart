@@ -17,6 +17,8 @@
 // screen that gates on status (PettiMainTabsScreen, the onboarding
 // controller) re-builds + dismisses the paywall.
 
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -147,44 +149,97 @@ class _PaywallBodyState extends State<_PaywallBody> {
               _featureRow('Historial completo de paseos y actividad'),
               _featureRow('Cancela cuando quieras desde tu Apple ID'),
               const SizedBox(height: PettiSpacing.s7),
-              ElevatedButton(
-                onPressed: sub.isPurchaseInFlight
-                    ? null
-                    : () => sub.startPurchase(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: PettiColors.marigold,
-                  foregroundColor: PettiColors.midnight,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+              // Platform gating: the v1 IAP/billing pipeline is iOS-only.
+              // The backend's /verify-purchase returns 501 for
+              // google_play (see SubscriptionProvider._verifyAndRefresh),
+              // so launching the Play Billing sheet here would actually
+              // CHARGE Android users and grant them no subscription.
+              // Until the Android backend lands, show a "coming soon"
+              // notice + WhatsApp escape hatch instead of the buy CTA.
+              // The Android-side paywall gate is also relaxed at
+              // petti_main_tabs_screen.dart so existing trial users
+              // aren't locked behind this screen.
+              if (Platform.isIOS) ...[
+                ElevatedButton(
+                  onPressed: sub.isPurchaseInFlight
+                      ? null
+                      : () => sub.startPurchase(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PettiColors.marigold,
+                    foregroundColor: PettiColors.midnight,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(PettiRadii.md),
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
+                  child: sub.isPurchaseInFlight
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation(PettiColors.midnight),
+                          ),
+                        )
+                      : const Text('Empezar prueba gratis'),
+                ),
+                const SizedBox(height: PettiSpacing.s3),
+                // Restore is intentionally tappable even while a
+                // purchase is "in flight" — it's the natural recovery
+                // path when a purchase event got dropped (StoreKit
+                // glitch, network blip, app backgrounded mid-sheet).
+                // Disabling it would leave the user with no way out
+                // short of force-quitting. The safety timer +
+                // handleAppResumed in SubscriptionProvider also help,
+                // but restore is the most direct user-controlled
+                // escape hatch.
+                TextButton(
+                  onPressed: () => sub.restorePurchases(),
+                  child: const Text(
+                    'Restaurar compra',
+                    style: TextStyle(
+                      color: PettiColors.midnight,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.all(PettiSpacing.s4),
+                  decoration: BoxDecoration(
+                    color: PettiColors.cloud,
+                    border: Border.all(color: PettiColors.fgDim, width: 1),
                     borderRadius: BorderRadius.circular(PettiRadii.md),
                   ),
-                ),
-                child: sub.isPurchaseInFlight
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          valueColor: AlwaysStoppedAnimation(PettiColors.midnight),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Pronto disponible en Android',
+                        textAlign: TextAlign.center,
+                        style: PettiText.bodyStrong().copyWith(
+                          color: PettiColors.midnight,
+                          fontSize: 15,
                         ),
-                      )
-                    : const Text('Empezar prueba gratis'),
-              ),
-              const SizedBox(height: PettiSpacing.s3),
-              TextButton(
-                onPressed: sub.isPurchaseInFlight ? null : () => sub.restorePurchases(),
-                child: const Text(
-                  'Restaurar compra',
-                  style: TextStyle(
-                    color: PettiColors.midnight,
-                    fontWeight: FontWeight.w600,
+                      ),
+                      const SizedBox(height: PettiSpacing.s2),
+                      Text(
+                        'Estamos terminando la integración con Google Play. '
+                        'Escríbenos si quieres que te avisemos cuando esté lista.',
+                        textAlign: TextAlign.center,
+                        style: PettiText.body().copyWith(
+                          color: PettiColors.fgDim,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
+              ],
               const SizedBox(height: PettiSpacing.s2),
               // WhatsApp support — Apple-acceptable (Tractive / Fi / Whistle
               // all link external support from their paywalls). Pre-filled

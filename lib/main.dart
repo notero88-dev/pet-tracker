@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 
@@ -25,31 +24,16 @@ import 'services/fcm_service.dart';
 import 'utils/app_navigator.dart';
 import 'utils/petti_theme.dart';
 
-/// Accept the droplet's self-signed TLS certificate.
-///
-/// The droplet at 64.23.156.25 currently serves HTTPS with a self-signed
-/// cert (no domain → no Let's Encrypt yet, see PLAN.md Epic 6). Without
-/// this override the Flutter HTTP client refuses the connection.
-///
-/// Originally gated on kDebugMode, but the gate was removed so release
-/// builds can also reach the droplet during personal dogfooding
-/// (Petti/2026-05-06 — symptom: CERTIFICATE_VERIFY_FAILED when tapping
-/// the Mode 8 toggle button). The host-allowlist inside the override
-/// limits the bypass to 64.23.156.25 only — any other host with a bad
-/// cert is still rejected. Re-add the kDebugMode gate (and prefer the
-/// proper TLS-cert path) once the droplet has Let's Encrypt on a real
-/// domain (api.petti.co per the iOS runbook's TLS section).
-class _DropletSelfSignedOverrides extends HttpOverrides {
-  static const _allowedHosts = {'64.23.156.25'};
-
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback = (cert, host, port) {
-        return _allowedHosts.contains(host);
-      };
-  }
-}
+// 2026-05-28: removed _DropletSelfSignedOverrides + HttpOverrides.global.
+// The override previously trusted self-signed certs for raw IP
+// 64.23.156.25 in ALL builds (a kDebugMode gate had been deliberately
+// stripped on 2026-05-06 to keep dogfooding builds working). It is no
+// longer needed: the app talks to https://api.mybesti.co exclusively,
+// which serves a valid Let's Encrypt certificate, so the standard
+// HttpClient path validates cleanly. Leaving the override in release
+// builds would have been an MITM hole on untrusted Wi-Fi and an ATS
+// rejection risk during App Review. If a raw-IP fallback is ever
+// needed again, re-add the override gated strictly on `kDebugMode`.
 
 void main() async {
   // The whole startup runs inside runZonedGuarded so any uncaught async
@@ -72,12 +56,6 @@ void main() async {
   // intentionally crashes-and-restarts a lot).
   await runZonedGuarded<Future<void>>(() async {
     WidgetsFlutterBinding.ensureInitialized();
-
-    // Self-signed cert acceptance for our own droplet at 64.23.156.25.
-    // Applies to both debug and release until the droplet has a Let's
-    // Encrypt cert on a real domain. See _DropletSelfSignedOverrides for
-    // the host-allowlist scope.
-    HttpOverrides.global = _DropletSelfSignedOverrides();
 
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -144,6 +122,14 @@ class PetTrackApp extends StatefulWidget {
 
 class _PetTrackAppState extends State<PetTrackApp> with WidgetsBindingObserver {
   late final NotificationProvider _notificationProvider;
+  // SubscriptionProvider is hoisted to a field (eager construction
+  // + ChangeNotifierProvider.value below) so the root lifecycle
+  // observer can call handleAppResumed() directly. Reason: if the
+  // user backgrounds the app mid-IAP-sheet, StoreKit may never
+  // deliver a terminal stream event — the safety timer inside the
+  // provider covers that, but a resume is a good additional cue
+  // to drop a stale "purchasing" state.
+  late final SubscriptionProvider _subscriptionProvider;
   final FCMService _fcm = FCMService();
 
   // Debounce app_opened so lock/unlock spam doesn't inflate session count.
@@ -172,6 +158,11 @@ class _PetTrackAppState extends State<PetTrackApp> with WidgetsBindingObserver {
     // lands while the user is in the app).
     _notificationProvider = NotificationProvider()..initialize();
 
+    // SubscriptionProvider is constructed eagerly too. initialize() is
+    // still called lazily from PettiMainTabsScreen.initState after the
+    // user is signed in — that method is idempotent.
+    _subscriptionProvider = SubscriptionProvider();
+
     // Defer FCM initialization to the first post-frame callback so the
     // navigator key is mounted before any cold-start tap tries to push a
     // route via getInitialMessage(). Without this guard, a user tapping
@@ -195,6 +186,10 @@ class _PetTrackAppState extends State<PetTrackApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _maybeFireAppOpened();
+      // Give the subscription provider a chance to recover from a
+      // stuck "purchasing" state. See SubscriptionProvider.handleAppResumed
+      // for the full rationale.
+      _subscriptionProvider.handleAppResumed();
     }
   }
 
@@ -207,9 +202,9 @@ class _PetTrackAppState extends State<PetTrackApp> with WidgetsBindingObserver {
         // SubscriptionProvider owns: subscription status, IAP flow,
         // /me + /verify-purchase calls. Initialized lazily from
         // PettiMainTabsScreen.initState — see that file for the
-        // initialize() call. Created here at the root so the paywall
-        // (rendered from various places in the tree) can read state.
-        ChangeNotifierProvider(create: (_) => SubscriptionProvider()),
+        // initialize() call. Constructed eagerly above so the root
+        // lifecycle observer can call handleAppResumed() on it.
+        ChangeNotifierProvider.value(value: _subscriptionProvider),
         // Reuse the eagerly-constructed instance so FCM and the widget
         // tree share the same NotificationProvider state.
         ChangeNotifierProvider.value(value: _notificationProvider),

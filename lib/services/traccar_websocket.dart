@@ -1,5 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io;
+
+import 'package:flutter/foundation.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../utils/constants.dart';
 import '../models/position.dart';
@@ -13,7 +17,6 @@ class TraccarWebSocket {
   StreamController<String>? _statusController;
   
   bool _isConnected = false;
-  String? _sessionCookie;
   
   /// Stream of position updates
   Stream<Position> get positionStream {
@@ -35,24 +38,38 @@ class TraccarWebSocket {
   
   bool get isConnected => _isConnected;
 
-  /// Connect to Traccar WebSocket
-  /// 
-  /// Requires session cookie from HTTP login to Traccar
-  /// (Usually we don't expose Traccar directly to app, but this is for real-time updates)
-  /// 
-  /// For MVP: We'll use Firebase UID to authenticate via backend proxy
+  /// Connect to Traccar WebSocket.
+  ///
+  /// Traccar's `/api/socket` endpoint refuses the HTTP→WS upgrade unless
+  /// the request carries a valid `JSESSIONID` cookie tied to a server-side
+  /// session (Basic auth on the upgrade request is also rejected). Without
+  /// the cookie, Jetty 12 silently returns HTTP 200 with an empty body
+  /// instead of HTTP 101, and `WebSocketChannel.connect` throws
+  /// "was not upgraded to websocket".
+  ///
+  /// Caller must obtain the cookie via [TraccarApi.establishSession] and
+  /// pass it here. We use [IOWebSocketChannel.connect] (dart:io path) to
+  /// attach the `Cookie` header — the cross-platform [WebSocketChannel.connect]
+  /// doesn't support custom headers. iOS-only is fine for now; if we ever
+  /// build for Flutter web, we'll need a different strategy (CORS +
+  /// `withCredentials` on the WS handshake).
   Future<void> connect({String? sessionCookie}) async {
     if (_isConnected) {
-      print('WebSocket already connected');
+      debugPrint('WebSocket already connected');
       return;
     }
 
-    _sessionCookie = sessionCookie;
-
     try {
-      _channel = WebSocketChannel.connect(
-        Uri.parse(AppConstants.traccarWebSocketUrl),
+      // Hand-roll the underlying WebSocket so we can inject the Cookie
+      // header on the upgrade request. IOWebSocketChannel.connect's
+      // `headers` parameter is the documented path for this.
+      final socket = await io.WebSocket.connect(
+        AppConstants.traccarWebSocketUrl,
+        headers: <String, dynamic>{
+          if (sessionCookie != null) 'Cookie': 'JSESSIONID=$sessionCookie',
+        },
       );
+      _channel = IOWebSocketChannel(socket);
 
       _isConnected = true;
       _statusController?.add('connected');
@@ -63,11 +80,12 @@ class TraccarWebSocket {
         onDone: _handleClose,
       );
 
-      print('WebSocket connected to Traccar');
+      debugPrint('WebSocket connected to Traccar (cookie: '
+          '${sessionCookie != null ? "JSESSIONID=${sessionCookie.length} chars" : "NONE — will fail"})');
     } catch (e) {
       _isConnected = false;
       _statusController?.add('error');
-      print('WebSocket connection error: $e');
+      debugPrint('WebSocket connection error: $e');
       rethrow;
     }
   }
@@ -98,24 +116,24 @@ class TraccarWebSocket {
       
       if (data['devices'] != null) {
         // Device update (status change)
-        print('Device update: ${data['devices']}');
+        debugPrint('Device update: ${data['devices']}');
         _statusController?.add('device_update');
       }
     } catch (e) {
-      print('Error parsing WebSocket message: $e');
+      debugPrint('Error parsing WebSocket message: $e');
     }
   }
 
   /// Handle WebSocket error
   void _handleError(error) {
-    print('WebSocket error: $error');
+    debugPrint('WebSocket error: $error');
     _isConnected = false;
     _statusController?.add('error');
   }
 
   /// Handle WebSocket close
   void _handleClose() {
-    print('WebSocket connection closed');
+    debugPrint('WebSocket connection closed');
     _isConnected = false;
     _statusController?.add('disconnected');
   }
