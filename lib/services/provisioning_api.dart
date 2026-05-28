@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'dart:io' show SocketException;
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:http/http.dart' as http;
 import '../utils/constants.dart';
 import '../models/device.dart';
+import 'firestore_service.dart';
 import 'wizard_step_result.dart';
 
 /// Default HTTP timeout for the provisioning-api client.
@@ -109,6 +111,39 @@ class ProvisioningApi {
           // Store credentials for future use (returned via exception/callback)
           // Note: Credentials are in data['credentials'] = { email, password }
           _lastProvisionedCredentials = data['credentials'];
+
+          // Sync the Traccar credentials to Firestore users/{uid} so
+          // TraccarProvider can log in on next cold launch with the
+          // freshly-rotated password. Without this write, /provision's
+          // idempotent re-link rotates the Traccar password but the app
+          // keeps reading the old one from Firestore → Traccar login
+          // fails silently → Mapa renders the "Aún no hay mascotas"
+          // empty state even though Mascotas (Firestore) shows pets.
+          //
+          // Discovered 2026-05-28 during Android dogfood on Internal
+          // Testing: nico.prueba's Firestore traccarPassword was 5 days
+          // stale because of exactly this missing write. Manually
+          // syncing fixed it; this write prevents the recurrence.
+          //
+          // Best-effort: a Firestore failure shouldn't abort a
+          // successful provision. The next cold launch's _initializeTraccar
+          // tolerates a missing/stale credential by surfacing the empty
+          // state instead of crashing.
+          final creds = data['credentials'];
+          if (creds is Map
+              && creds['email'] is String
+              && creds['password'] is String) {
+            try {
+              await FirestoreService().updateUserProfile(userId, {
+                'traccarEmail': creds['email'],
+                'traccarPassword': creds['password'],
+              });
+            } catch (e) {
+              if (kDebugMode) {
+                debugPrint('provisionDevice: Firestore credential sync failed: $e');
+              }
+            }
+          }
 
           // Construct Device object from response
           return Device(
