@@ -75,7 +75,13 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
       // 2026-05-25: SubscriptionProvider also boots from here —
       // single deferred-to-first-frame batch. It does its own /me
       // fetch + wires the in_app_purchase stream listener.
-      Provider.of<SubscriptionProvider>(context, listen: false).initialize();
+      //
+      // 2026-06-01: pass the current uid so a second account in the same
+      // app session forces a fresh /me fetch instead of inheriting the
+      // first account's status (cross-account carryover bug).
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      Provider.of<SubscriptionProvider>(context, listen: false)
+          .initialize(uid: auth.currentUser?.uid);
     });
   }
 
@@ -95,6 +101,11 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
       if (email == null || password == null) {
         debugPrint(
             '[PettiMainTabs] user has no traccar credentials yet — empty state');
+        // Defense in depth (2026-06-01): TraccarProvider is app-scoped and
+        // isn't torn down on sign-out, so it can still hold the PREVIOUS
+        // account's devices. A brand-new account has no creds and would
+        // otherwise render those stale devices as its own pets. Clear them.
+        await traccarProvider.disconnect();
         return;
       }
       final success = await traccarProvider.connect(email, password);

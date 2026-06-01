@@ -109,6 +109,14 @@ class SubscriptionProvider extends ChangeNotifier {
   StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
   bool _isInitialized = false;
 
+  /// Firebase uid `initialize()` last ran for. Used to detect an
+  /// account switch within a single app session: app-scoped providers
+  /// are NOT torn down on sign-out, so without this the second account
+  /// in a session would keep the first account's `_status` and skip the
+  /// paywall (the cross-account carryover bug, 2026-06-01). When the uid
+  /// changes we re-fetch /me even though `_isInitialized` is already true.
+  String? _initializedForUid;
+
   /// Safety timer for startPurchase(). If StoreKit / Play Billing
   /// drops the purchase event (network blip during the sheet, app
   /// backgrounded mid-sheet, etc.) the purchaseStream listener may
@@ -149,11 +157,18 @@ class SubscriptionProvider extends ChangeNotifier {
 
   // ── Initialization ───────────────────────────────────────────────
 
-  /// Wire the purchase stream + do an initial /me fetch. Safe to
-  /// call multiple times — the second call is a no-op.
-  Future<void> initialize() async {
-    if (_isInitialized) return;
+  /// Wire the purchase stream + do an initial /me fetch.
+  ///
+  /// Pass the signed-in user's Firebase [uid]. Calling again for the SAME
+  /// uid is a no-op (cheap re-entry from PettiMainTabsScreen.initState).
+  /// Calling for a DIFFERENT uid — i.e. a second account in the same app
+  /// session — forces a fresh /me fetch so the new account never inherits
+  /// the previous account's status. See [_initializedForUid] and
+  /// [reset] for the carryover-bug rationale (2026-06-01).
+  Future<void> initialize({String? uid}) async {
+    if (_isInitialized && uid == _initializedForUid) return;
     _isInitialized = true;
+    _initializedForUid = uid;
 
     // 1. Subscribe to purchase events from the store. The stream
     // fires on:
@@ -162,7 +177,10 @@ class SubscriptionProvider extends ChangeNotifier {
     //     subscriptions automatically on iOS; Android needs an
     //     explicit restorePurchases() call)
     //   - state changes (subscription renewed in background, etc.)
-    _purchaseSub = _iap.purchaseStream.listen(
+    //
+    // The store purchase stream is account-independent, so we subscribe
+    // exactly once and keep it across account switches (`??=`).
+    _purchaseSub ??= _iap.purchaseStream.listen(
       _onPurchaseUpdates,
       onError: (e) {
         if (kDebugMode) debugPrint('SubscriptionProvider: purchaseStream error: $e');
@@ -184,6 +202,31 @@ class SubscriptionProvider extends ChangeNotifier {
     _purchaseSub?.cancel();
     _purchaseSafetyTimer?.cancel();
     super.dispose();
+  }
+
+  /// Clear all user-specific subscription state. Call this on sign-out.
+  ///
+  /// This provider is constructed once at app root and lives for the whole
+  /// process, so without an explicit reset the next account signed into the
+  /// same app session inherits this account's `status` — which lets them
+  /// skip the paywall ("looks like it already paid"). Resetting
+  /// `_isInitialized` + `_initializedForUid` also re-arms `initialize()` so
+  /// the next account does a fresh /me fetch. (Cross-account carryover bug,
+  /// 2026-06-01.)
+  ///
+  /// Deliberately does NOT cancel `_purchaseSub`: the store purchase stream
+  /// is account-independent and should survive a sign-out so a returning
+  /// user's restored purchases still land.
+  void reset() {
+    _status = SubscriptionStatus.unknown;
+    _subscription = null;
+    _isPurchaseInFlight = false;
+    _lastError = null;
+    _isInitialized = false;
+    _initializedForUid = null;
+    _purchaseSafetyTimer?.cancel();
+    _purchaseSafetyTimer = null;
+    notifyListeners();
   }
 
   /// Called from the root WidgetsBindingObserver on

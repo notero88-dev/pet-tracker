@@ -1067,13 +1067,24 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       _error = null;
     });
     final auth = Provider.of<AuthProvider>(context, listen: false);
+    final traccar = Provider.of<TraccarProvider>(context, listen: false);
+    final subscription =
+        Provider.of<SubscriptionProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
     final result = await auth.deleteAccount(password: pwd);
     if (!mounted) return;
     if (result == null) {
       // Success — the AuthProvider already signed out, which will
       // trigger the auth state listener at the root of the app to
       // navigate back to the login screen. Just dismiss the dialog.
-      Navigator.of(context).pop();
+      //
+      // Reset app-scoped provider state too (2026-06-01): like sign-out,
+      // account deletion leaves TraccarProvider + SubscriptionProvider
+      // holding this account's devices/status, which the next account in
+      // the same app session would otherwise inherit.
+      await traccar.disconnect();
+      subscription.reset();
+      navigator.pop();
     } else {
       setState(() {
         _busy = false;

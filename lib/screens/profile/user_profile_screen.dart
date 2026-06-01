@@ -17,7 +17,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/subscription_provider.dart';
+import '../../providers/traccar_provider.dart';
 import '../../utils/petti_theme.dart';
+import '../auth/login_screen.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
@@ -205,10 +208,82 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       )
                     : const Text('Guardar cambios'),
               ),
+
+              const SizedBox(height: PettiSpacing.s7),
+
+              // 2026-05-20: Cerrar sesión wired into Mi perfil at Nico's
+              // request. The Cuenta tab previously had no logout exit. Uses
+              // alert color + confirmation dialog to prevent accidental
+              // taps. After signOut() the AuthProvider notifies listeners
+              // and the root widget routes back to the login screen.
+              TextButton.icon(
+                onPressed: _isLoading ? null : _confirmSignOut,
+                icon: const Icon(
+                  Icons.logout_rounded,
+                  color: PettiColors.alert,
+                ),
+                label: Text(
+                  'Cerrar sesión',
+                  style: PettiText.bodyStrong().copyWith(
+                    color: PettiColors.alert,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text(
+          '¿Seguro que quieres cerrar sesión? Tendrás que iniciar sesión de '
+          'nuevo para ver a tu Besti.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: PettiColors.alert),
+            child: const Text('Cerrar sesión'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final traccar = Provider.of<TraccarProvider>(context, listen: false);
+    final subscription =
+        Provider.of<SubscriptionProvider>(context, listen: false);
+    final navigator = Navigator.of(context);
+
+    // Reset app-scoped provider state BEFORE clearing auth. These providers
+    // are constructed once at app root and live for the whole process; if
+    // we don't clear them, the next account signed into the same app
+    // session inherits this account's devices (shows the wrong pets) and
+    // subscription status (skips the paywall). Cross-account carryover bug,
+    // 2026-06-01 — see SubscriptionProvider.reset / TraccarProvider.disconnect.
+    await traccar.disconnect();
+    subscription.reset();
+
+    await auth.signOut();
+    if (!mounted) return;
+    // The app's SplashScreen only routes once on cold start — there's no
+    // reactive auth wrapper at the root that pushes us back to login when
+    // the AuthProvider clears its user. Do it ourselves: clear the entire
+    // navigation stack and replace it with LoginScreen so the user can't
+    // navigate-back into the signed-out app.
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
     );
   }
 
