@@ -434,28 +434,26 @@ class SubscriptionProvider extends ChangeNotifier {
   ];
 
   Future<void> _verifyAndRefresh(PurchaseDetails purchase) async {
-    // For iOS StoreKit 2, `serverVerificationData` is the signed
-    // transaction JWT — exactly what our backend's
-    // appleReceiptVerifier expects. For older StoreKit 1 + Android
-    // this is a different format (raw receipt blob / purchase
-    // token JSON) which our backend doesn't currently understand.
-    // v1 = iOS-only; Phase C+ wires Android.
+    // `serverVerificationData` carries different payloads per platform:
+    //   - iOS StoreKit 2: the signed transaction JWT (Apple-CA chained)
+    //   - Android: the opaque purchaseToken Google Play Billing returns
+    // The backend POST /subscriptions/verify-purchase route accepts the
+    // field under either key (`signedTransactionInfo` for back-compat
+    // with this client; `purchaseToken` for the Android branch). One
+    // call site, one retry loop — backend branches on `provider`.
+    //
+    // Was previously a Google skip + /me poll (defensive against the
+    // 501 the backend used to return for google_play). Removed
+    // 2026-06-02 once Phase D went live: backend now verifies Google
+    // purchases against the Play Developer API V2 just like Apple.
+    // Without /verify-purchase being called, the RTDN webhook arrives
+    // orphaned and gets ack+skipped, so the row never gets created —
+    // exactly the bug that showed up on the first Android test
+    // (Google charged + sent SUBSCRIPTION_PURCHASED to RTDN, but the
+    // app never told the backend anything → paywall stuck).
     final provider = _platformProvider();
-    if (provider == 'google_play') {
-      // Defensive: the backend returns 501 for google_play in v1.
-      // Refresh /me after a delay in case the RTDN webhook already
-      // landed and grew the row. The paywall UI now hides the Android
-      // CTA outright (see paywall_screen.dart), so this branch is a
-      // belt-and-suspenders guard for any orphaned restored purchase.
-      if (kDebugMode) {
-        debugPrint('SubscriptionProvider: google_play verify not implemented in v1');
-      }
-      await Future<void>.delayed(const Duration(seconds: 3));
-      await refreshFromBackend();
-      return;
-    }
 
-    // iOS: try the verify call up to 4 times (1 initial + 3 retries).
+    // Try the verify call up to 4 times (1 initial + 3 retries).
     // Surface "Reintentando…" copy between attempts so a paying user
     // sees progress instead of an apparent freeze on a transient 5xx.
     final maxAttempts = 1 + _verifyRetryDelays.length;
