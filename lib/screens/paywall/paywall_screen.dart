@@ -210,7 +210,7 @@ class _PaywallBodyState extends State<_PaywallBody> {
               TextButton.icon(
                 onPressed: () async {
                   final uri = AppConstants.whatsAppSupportLink(
-                    'Tengo dudas de la suscripción de Besti',
+                    'Tengo dudas de la suscripción de My Besti',
                   );
                   await launchUrl(uri, mode: LaunchMode.externalApplication);
                 },

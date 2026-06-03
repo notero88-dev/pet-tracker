@@ -101,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: PettiColors.cloud,
       appBar: AppBar(
-        title: Text('Besti', style: PettiText.h2()),
+        title: Text('My Besti', style: PettiText.h2()),
         actions: [
           // Activity icon moved out of the AppBar 2026-05-11 to match the
           // home screen redesign in plans/2026-05-11-… — entry is now the
@@ -238,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: PettiSpacing.s5),
 
             Text(
-              '¡Bienvenido a Besti!',
+              '¡Bienvenido a My Besti!',
               style: PettiText.h1(),
               textAlign: TextAlign.center,
             ),

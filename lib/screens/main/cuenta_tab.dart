@@ -812,7 +812,7 @@ class _SoporteCard extends StatelessWidget {
               label: 'WhatsApp soporte',
               sub: 'Lun–Sáb · 8am–8pm',
               onTap: () => _openUrl(
-                AppConstants.whatsAppSupportLink('Necesito ayuda con mi app Besti').toString(),
+                AppConstants.whatsAppSupportLink('Necesito ayuda con mi app My Besti').toString(),
               ),
               external: true,
               isLast: true,
@@ -1294,7 +1294,7 @@ class _SubscriptionCard extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          sub.product?.title.split('(').first.trim() ?? 'Besti Mensual',
+          sub.product?.title.split('(').first.trim() ?? 'My Besti Mensual',
           style: PettiText.bodyStrong().copyWith(
             color: PettiColors.midnight,
             fontSize: 16,
@@ -1322,7 +1322,7 @@ class _SubscriptionCard extends StatelessWidget {
     final subscription = sub.subscription;
     if (subscription == null) {
       return Text(
-        'Suscríbete para usar Besti.',
+        'Suscríbete para usar My Besti.',
         style: PettiText.body().copyWith(color: PettiColors.fgDim),
       );
     }

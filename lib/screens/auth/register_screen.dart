@@ -131,7 +131,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Bienvenido a Besti', style: PettiText.h1()),
+                Text('Bienvenido a My Besti', style: PettiText.h1()),
                 const SizedBox(height: PettiSpacing.s2),
                 Text(
                   'Crea tu cuenta para registrar tu mascota y empezar a verla en el mapa.',
@@ -302,7 +302,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     decoration: TextDecoration.underline,
                                   ),
                                 ),
-                                const TextSpan(text: ' de Besti'),
+                                const TextSpan(text: ' de My Besti'),
                               ],
                             ),
                           ),

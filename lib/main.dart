@@ -216,7 +216,7 @@ class _PetTrackAppState extends State<PetTrackApp> with WidgetsBindingObserver {
         Provider<FCMService>.value(value: _fcm),
       ],
       child: MaterialApp(
-        title: 'Besti',
+        title: 'My Besti',
         theme: PettiTheme.lightTheme,
         debugShowCheckedModeBanner: false,
         // These keys let FCM handlers (which run outside the widget tree)

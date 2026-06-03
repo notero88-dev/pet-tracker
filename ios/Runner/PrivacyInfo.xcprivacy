@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  PrivacyInfo.xcprivacy — Besti app's privacy manifest.
+  PrivacyInfo.xcprivacy — My Besti app's privacy manifest.
 
   Required by Apple for App Store / TestFlight submission since
   iOS 17 (effective May 1, 2024). Apple aggregates this file with
@@ -14,7 +14,7 @@
   Sections:
 
     NSPrivacyTracking
-      false — Besti does not track users across apps/websites
+      false — My Besti does not track users across apps/websites
               owned by other companies. Firebase Analytics is
               first-party and not "tracking" under Apple's
               definition (per Apple's own clarification +
