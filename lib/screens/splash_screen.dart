@@ -111,7 +111,7 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   const SizedBox(height: PettiSpacing.s5),
                   Text(
-                    'Besti',
+                    'My Besti',
                     style: PettiText.display().copyWith(
                       fontSize: 44,
                       color: PettiColors.midnight,
