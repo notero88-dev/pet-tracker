@@ -5,7 +5,7 @@
 // `refunded`.
 //
 // Visual contract (per the plan, 2026-05-25):
-//   - Hero: the Besti pin icon + "Activa tu Besti" headline
+//   - Hero: the Besti pin icon + "Activa tu My Besti" headline
 //   - Price line: "30 días gratis · luego ${monthly price}"
 //   - Primary CTA: "Empezar prueba gratis" (marigold pill, full width)
 //   - Secondary action: "Restaurar compra" (text link, midnight)
@@ -125,7 +125,7 @@ class _PaywallBodyState extends State<_PaywallBody> {
               ),
               const SizedBox(height: PettiSpacing.s5),
               Text(
-                'Activa tu Besti',
+                'Activa tu My Besti',
                 textAlign: TextAlign.center,
                 style: PettiText.display().copyWith(
                   fontSize: 32,
@@ -192,7 +192,7 @@ class _PaywallBodyState extends State<_PaywallBody> {
               TextButton.icon(
                 onPressed: () async {
                   final uri = AppConstants.whatsAppSupportLink(
-                    'Tengo dudas de la suscripción de Besti',
+                    'Tengo dudas de la suscripción de My Besti',
                   );
                   await launchUrl(uri, mode: LaunchMode.externalApplication);
                 },

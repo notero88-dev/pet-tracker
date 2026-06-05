@@ -105,7 +105,7 @@ class SettingsScreen extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.email_outlined),
             title: const Text('Contactar soporte'),
-            subtitle: const Text('soporte@pettrack.co'),
+            subtitle: const Text('soporte@mybesti.co'),
             trailing: const Icon(Icons.open_in_new),
             onTap: _contactSupport,
           ),
@@ -330,15 +330,15 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _contactSupport() async {
     final emailUri = Uri(
       scheme: 'mailto',
-      path: 'soporte@pettrack.co',
-      query: 'subject=Soporte PetTrack',
+      path: 'soporte@mybesti.co',
+      query: 'subject=Soporte My Besti',
     );
     _openUrl(emailUri.toString());
   }
 
   Future<void> _contactWhatsApp() async {
     final whatsappUri = Uri.parse(
-      'https://wa.me/573001234567?text=Hola, necesito ayuda con PetTrack',
+      'https://wa.me/573001234567?text=Hola, necesito ayuda con My Besti',
     );
     _openUrl(whatsappUri.toString());
   }

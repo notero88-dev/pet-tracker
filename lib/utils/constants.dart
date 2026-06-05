@@ -30,13 +30,13 @@ class AppConstants {
       'wss://api.mybesti.co/traccar/api/socket';
   
   // App Info
-  static const String appName = 'Besti';
+  static const String appName = 'My Besti';
   static const String appVersion = '1.0.0';
-  static const String supportEmail = 'soporte@pettrack.co';
+  static const String supportEmail = 'soporte@mybesti.co';
 
   // WhatsApp support: Nico's direct line. Used in two surfaces:
-  //   - Paywall ("Tengo dudas de la suscripción de Besti")
-  //   - Cuenta → Soporte ("Necesito ayuda con mi app Besti")
+  //   - Paywall ("Tengo dudas de la suscripción de My Besti")
+  //   - Cuenta → Soporte ("Necesito ayuda con mi app My Besti")
   // Number in international format without the +, as wa.me requires.
   static const String supportWhatsAppPhone = '573125220165';
 

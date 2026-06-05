@@ -381,7 +381,7 @@ class AuthProvider with ChangeNotifier {
       final api = ProvisioningApi();
       final ok = await api.deleteAccount();
       if (!ok) {
-        return 'No pudimos eliminar tu cuenta. Escríbenos a soporte@pettrack.co.';
+        return 'No pudimos eliminar tu cuenta. Escríbenos a soporte@mybesti.co.';
       }
     } catch (e) {
       return 'Error de conexión. Inténtalo de nuevo.';
