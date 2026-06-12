@@ -622,15 +622,15 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     if (!mounted) return;
     String detail;
     if (result is WizardStepQueueExpired) {
-      detail = 'Tu PetTrack no respondió a tiempo. '
+      detail = 'Tu Besti no respondió a tiempo. '
           'Llévalo cerca de una ventana o muévelo para despertarlo.';
     } else if (result is WizardStepDeviceOffline) {
-      detail = 'No estamos detectando tu PetTrack. Asegúrate de que esté encendido.';
+      detail = 'No estamos detectando tu Besti. Asegúrate de que esté encendido.';
     } else if (result is WizardStepTimedOut) {
-      detail = 'Tu PetTrack no terminó de aplicar la configuración. '
+      detail = 'Tu Besti no terminó de aplicar la configuración. '
           'Inténtalo de nuevo en unos segundos.';
     } else if (result is WizardStepDeviceRejected) {
-      detail = 'Tu PetTrack rechazó la orden (${result.payload}). Inténtalo de nuevo.';
+      detail = 'Tu Besti rechazó la orden (${result.payload}). Inténtalo de nuevo.';
     } else if (result is WizardStepFailed) {
       detail = result.error;
     } else {

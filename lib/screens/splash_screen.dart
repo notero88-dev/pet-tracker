@@ -174,7 +174,11 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                   // Transparent-bg pin so the amber gradient shows through
                   // around it (this is the same asset Android uses as its
-                  // adaptive-icon foreground).
+                  // adaptive-icon foreground). The "My Besti" rebrand from
+                  // origin/main is already reflected in this Barrio-design
+                  // splash via the "BIENVENIDO A MY BESTI" label + the
+                  // bottom wordmark; the old text-wordmark hero this file
+                  // replaced is intentionally dropped.
                   child: Image.asset(
                     'assets/icons/besti_icon_foreground.png',
                     width: 168,

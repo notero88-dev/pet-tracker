@@ -32,7 +32,7 @@ class AppConstants {
   // App Info
   static const String appName = 'My Besti';
   static const String appVersion = '1.0.0';
-  static const String supportEmail = 'soporte@pettrack.co';
+  static const String supportEmail = 'soporte@mybesti.co';
 
   // WhatsApp support: Nico's direct line. Used in two surfaces:
   //   - Paywall ("Tengo dudas de la suscripción de My Besti")
