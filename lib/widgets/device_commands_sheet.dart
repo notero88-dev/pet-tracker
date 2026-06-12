@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/device.dart';
 import '../providers/traccar_provider.dart';
+import '../services/amplitude_service.dart';
 import '../services/app_event_service.dart';
 import '../utils/constants.dart';
 
@@ -229,6 +230,10 @@ class DeviceCommandsSheet extends StatelessWidget {
         duration: Duration(seconds: 2),
       ),
     );
+
+    AmplitudeService.instance.track('Find Now Requested', properties: {
+      'device_imei': device.uniqueId,
+    });
 
     // Debug-dashboard activity stream — fire-and-forget. See
     // pettrack-backend/docs/plans/2026-05-12-debug-dashboard.md.

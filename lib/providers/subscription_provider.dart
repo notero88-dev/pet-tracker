@@ -28,6 +28,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
+import '../services/amplitude_service.dart';
 import '../services/subscription_api.dart';
 
 /// Status enum the UI gates on. Maps 1:1 to the backend's `status`
@@ -381,7 +382,13 @@ class SubscriptionProvider extends ChangeNotifier {
         case PurchaseStatus.purchased:
         case PurchaseStatus.restored:
           // The crucial path: verify with our backend.
+          final wasRestore = purchase.status == PurchaseStatus.restored;
           await _verifyAndRefresh(purchase);
+          if (wasRestore && _lastError == null) {
+            AmplitudeService.instance.track('Purchase Restored', properties: {
+              'product_id': purchase.productID,
+            });
+          }
           // ALWAYS call completePurchase, even after restored events.
           // Failing to do so means iOS will keep replaying this
           // purchase on every cold launch.
@@ -395,6 +402,10 @@ class SubscriptionProvider extends ChangeNotifier {
           break;
 
         case PurchaseStatus.error:
+          AmplitudeService.instance.track('Purchase Failed', properties: {
+            'product_id': purchase.productID,
+            'error_message': purchase.error?.message ?? 'unknown',
+          });
           _lastError = purchase.error?.message ?? 'Error desconocido durante la compra';
           _isPurchaseInFlight = false;
           _purchaseSafetyTimer?.cancel();
@@ -467,8 +478,20 @@ class SubscriptionProvider extends ChangeNotifier {
               purchase.verificationData.serverVerificationData,
         );
         _subscription = updated;
-        _status = _statusFromString(updated.status);
+        final newStatus = _statusFromString(updated.status);
+        _status = newStatus;
         _lastError = null;
+        if (newStatus == SubscriptionStatus.inTrial) {
+          AmplitudeService.instance.track('Trial Started', properties: {
+            'product_id': purchase.productID,
+            'provider': provider,
+          });
+        } else if (newStatus == SubscriptionStatus.active) {
+          AmplitudeService.instance.track('Subscription Started', properties: {
+            'product_id': purchase.productID,
+            'provider': provider,
+          });
+        }
         return;
       } catch (e) {
         lastError = e;

@@ -89,6 +89,9 @@ dependencies:
   # a single Flutter API. See lib/providers/subscription_provider.dart.
   in_app_purchase: ^3.2.0
 
+  # Amplitude analytics SDK for Flutter (iOS + Android).
+  amplitude_flutter: ^4.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

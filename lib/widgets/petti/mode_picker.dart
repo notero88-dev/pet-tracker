@@ -1,15 +1,27 @@
 // Mode picker — stacked cards variant (the chosen default).
 //
-// Three modes per the PRD/prototype:
-//   realtime   "Tiempo real"  — 10–600s, GPS+TCP always on
-//   home       "Modo Casa"    — 10–60s outdoors, sleeps indoors (recommended)
-//   deepSleep  "Ahorro"       — 1–24h updates, 12-month battery
+// Four modes per the PRD/prototype + Mictrack firmware:
+//   realtime     "Tiempo real"  — 10–600s, GPS+TCP always on. Best for active
+//                                 search / paseo de la mascota.
+//   home         "Modo Casa"    — 10–60s outdoors, sleeps indoors (recommended)
+//   wifiPriority "Inteligente"  — Hybrid Mode 9: scans Wi-Fi every t1 minutes;
+//                                 reports every t2 hours when no Wi-Fi seen.
+//                                 Middle ground between Tiempo real and Casa.
+//   deepSleep    "Ahorro"       — 1–24h updates, 12-month battery. For days
+//                                 sin salidas / hibernation when the family
+//                                 is traveling without the pet.
 
 import 'package:flutter/material.dart';
 import '../../utils/petti_theme.dart';
 import 'petti_primitives.dart';
 
-enum PettiMode { realtime, home, deepSleep }
+enum PettiMode { realtime, home, wifiPriority, deepSleep }
+
+/// Defaults for wifiPriority's two-args contract. UI doesn't expose the
+/// stepper for these in v1 — most users won't tune them — but if a user
+/// power-tweaks via DeviceSettings later, change here in one place.
+const int kPettiWifiPriorityT1Minutes = 30;
+const int kPettiWifiPriorityT2Hours = 4;
 
 class PettiModeSpec {
   final PettiMode id;
@@ -42,10 +54,18 @@ const List<PettiModeSpec> kPettiModes = [
     id: PettiMode.home,
     label: 'Modo Casa',
     sub:
-        'Se pone en silencio cuando Canela está en casa. Rastrea solo cuando sale.',
+        'Se pone en silencio cuando tu mascota está en casa. Rastrea solo cuando sale.',
     battery: '~14 días',
     icon: Icons.home_rounded,
     recommended: true,
+  ),
+  PettiModeSpec(
+    id: PettiMode.wifiPriority,
+    label: 'Inteligente',
+    sub:
+        'Detecta cuando tu mascota está cerca del Wi-Fi de casa para ahorrar batería. Reporta cada 4 horas al salir.',
+    battery: '~7 días',
+    icon: Icons.wifi_rounded,
   ),
   PettiModeSpec(
     id: PettiMode.deepSleep,
@@ -77,6 +97,12 @@ Map<PettiMode, List<PettiIntervalPreset>> kPettiIntervalPresets = {
     PettiIntervalPreset(30, '30s'),
     PettiIntervalPreset(60, '1 min'),
   ],
+  // wifiPriority has TWO interval args (t1Minutes + t2Hours) — single
+  // stepper doesn't fit. Empty list = the picker hides the stepper for
+  // this mode and DeviceSettings sends `kPettiWifiPriorityT1Minutes` +
+  // `kPettiWifiPriorityT2Hours` defaults instead. Power-user tuning is
+  // a follow-up.
+  PettiMode.wifiPriority: const [],
   PettiMode.deepSleep: const [
     PettiIntervalPreset(1, '1 h'),
     PettiIntervalPreset(4, '4 h'),
@@ -343,6 +369,11 @@ class PettiBatteryEstimateCard extends StatelessWidget {
         return '~3 días';
       case PettiMode.home:
         return interval <= 30 ? '~14 días' : '~18 días';
+      case PettiMode.wifiPriority:
+        // wifiPriority's `interval` parameter is unused in v1 (we hardcode
+        // the t1/t2 defaults inside DeviceSettingsScreen); the estimate
+        // is fixed for the default config.
+        return '~7 días';
       case PettiMode.deepSleep:
         if (interval <= 1) return '~45 días';
         if (interval <= 4) return '~4 meses';

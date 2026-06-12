@@ -2,14 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CLIENT_ID</key>
+	<string>487348630652-0am4lmo6ij7kn915h61pr66tk98pthdr.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.487348630652-0am4lmo6ij7kn915h61pr66tk98pthdr</string>
 	<key>API_KEY</key>
-	<string>AIzaSyAawSByoGwaIiqZc--PSI45Rl38wptzc7w</string>
+	<string>AIzaSyCPRk0Wp1dylUJK4YLOjsVqys1K_9gfH0A</string>
 	<key>GCM_SENDER_ID</key>
 	<string>487348630652</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>co.pettrack.app</string>
+	<string>co.pettrack.pettrackApp</string>
 	<key>PROJECT_ID</key>
 	<string>pettrack-colombia</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +29,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:487348630652:ios:001e1cb9b2273ab33905f9</string>
+	<string>1:487348630652:ios:16b272ffd28639823905f9</string>
 </dict>
 </plist>

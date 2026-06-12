@@ -23,6 +23,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/subscription_provider.dart';
+import '../../services/amplitude_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/petti_theme.dart';
 
@@ -66,6 +67,14 @@ class _PaywallBody extends StatefulWidget {
 
 class _PaywallBodyState extends State<_PaywallBody> {
   String? _lastShownError;
+
+  @override
+  void initState() {
+    super.initState();
+    AmplitudeService.instance.track('Paywall Viewed', properties: {
+      'allow_dismiss': widget.allowDismiss,
+    });
+  }
 
   @override
   void didUpdateWidget(covariant _PaywallBody old) {

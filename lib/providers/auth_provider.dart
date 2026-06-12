@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import '../services/amplitude_service.dart';
 import '../services/app_event_service.dart';
 import '../services/firestore_service.dart';
 import '../services/fcm_service.dart';
@@ -62,6 +63,13 @@ class AuthProvider with ChangeNotifier {
 
       _user = credential.user;
 
+      if (_user != null) {
+        AmplitudeService.instance.setUserId(_user!.uid);
+        AmplitudeService.instance.track('User Signed In', properties: {
+          'provider': 'email',
+        });
+      }
+
       // Fire-and-forget FCM init. Awaiting it deadlocks login on iOS release
       // builds when _messaging.getToken() hangs waiting for APN registration
       // that never completes (Petti/2026-05-06 incident — symptom: spinner
@@ -116,6 +124,13 @@ class AuthProvider with ChangeNotifier {
       }
       
       _user = credential.user;
+
+      if (_user != null) {
+        AmplitudeService.instance.setUserId(_user!.uid);
+        AmplitudeService.instance.track('User Signed Up', properties: {
+          'provider': 'email',
+        });
+      }
 
       // Fire-and-forget — see signIn() for rationale.
       unawaited(_fcm.initialize());
@@ -181,6 +196,15 @@ class AuthProvider with ChangeNotifier {
           email: _user!.email ?? googleUser.email,
           displayName: _user!.displayName ?? googleUser.displayName ?? '',
           phone: null,
+        );
+      }
+
+      if (_user != null) {
+        final isNew = userCredential.additionalUserInfo?.isNewUser == true;
+        AmplitudeService.instance.setUserId(_user!.uid);
+        AmplitudeService.instance.track(
+          isNew ? 'User Signed Up' : 'User Signed In',
+          properties: {'provider': 'google'},
         );
       }
 
@@ -266,6 +290,15 @@ class AuthProvider with ChangeNotifier {
               ? fullName
               : (_user!.displayName ?? ''),
           phone: null,
+        );
+      }
+
+      if (_user != null) {
+        final isNew = userCredential.additionalUserInfo?.isNewUser == true;
+        AmplitudeService.instance.setUserId(_user!.uid);
+        AmplitudeService.instance.track(
+          isNew ? 'User Signed Up' : 'User Signed In',
+          properties: {'provider': 'apple'},
         );
       }
 
@@ -410,6 +443,7 @@ class AuthProvider with ChangeNotifier {
       await _googleSignIn.signOut();
     } catch (_) {}
     await _auth.signOut();
+    AmplitudeService.instance.reset();
     _user = null;
     notifyListeners();
   }

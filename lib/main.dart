@@ -19,6 +19,7 @@ import 'providers/notification_provider.dart';
 import 'providers/subscription_provider.dart';
 import 'providers/traccar_provider.dart';
 import 'screens/splash_screen.dart';
+import 'services/amplitude_service.dart';
 import 'services/app_event_service.dart';
 import 'services/fcm_service.dart';
 import 'utils/app_navigator.dart';
@@ -60,6 +61,8 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
+    await AmplitudeService.instance.init();
 
     // Crashlytics — disable in debug so hot-reload crashes don't spam
     // the Firebase Console. Release builds collect.

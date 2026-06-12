@@ -20,6 +20,7 @@ import 'package:provider/provider.dart';
 import '../../models/device.dart';
 import '../../models/geofence.dart';
 import '../../providers/traccar_provider.dart';
+import '../../services/amplitude_service.dart';
 import '../../utils/petti_theme.dart';
 
 class GeofenceCreateScreen extends StatefulWidget {
@@ -353,6 +354,12 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
 
       if (!mounted) return;
       if (success) {
+        if (widget.editGeofence == null) {
+          AmplitudeService.instance.track('Safe Zone Created', properties: {
+            'radius_meters': _radiusMeters.round(),
+            'device_imei': widget.device.uniqueId,
+          });
+        }
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
