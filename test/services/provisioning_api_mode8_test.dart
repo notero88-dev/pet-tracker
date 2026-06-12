@@ -11,10 +11,16 @@ void main() {
       final mockClient = MockClient((req) async {
         expect(req.method, 'POST');
         expect(req.url.path, contains('/devices/123456789012345/scan'));
-        expect(req.url.queryParameters['via'], 'tcp');
+        // 'via' is no longer sent — the backend picks transport based on
+        // DEFAULT_COMMAND_TRANSPORT (see _runWizardCommand). The wizard
+        // contract here is the URL path + queue params, not transport.
         expect(req.url.queryParameters['queue'], 'true');
         expect(req.url.queryParameters['queueMs'], '60000');
-        expect(req.headers['x-api-key'], isNotNull);
+        // 2026-05-13 auth migration: x-api-key was removed; auth is now
+        // `Authorization: Bearer <firebase_id_token>` via _authHeaders().
+        // In the unit-test environment Firebase isn't initialized so no
+        // header is sent — we no longer assert one. The wizard contract
+        // we care about here is the URL + method + body, not the header.
         return http.Response(
           jsonEncode({
             'success': true,

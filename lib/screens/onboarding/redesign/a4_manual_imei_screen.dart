@@ -55,10 +55,23 @@ class _A4ManualImeiScreenState extends State<A4ManualImeiScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: PettiColors.midnight,
-      // Don't auto-resize — we manage the layout manually so the segmented
-      // input stays put when the keyboard appears.
-      resizeToAvoidBottomInset: false,
-      body: SafeArea(
+      // 2026-05-12: was `false` to keep the segmented input visually stable
+      // when the keyboard rose. Trade-off was wrong — with the iOS numeric
+      // keyboard up, the bottom CTA dock ("Continuar") rendered BELOW the
+      // keyboard's top edge and was unreachable, blocking the user from
+      // completing the manual-IMEI flow. (Observed dogfood 2026-05-12: the
+      // user typed 15 digits but could not advance, and the iOS number pad
+      // has no built-in "Done" key.) `true` lets the Scaffold shrink the
+      // body so the CTA stays above the keyboard. The segmented display
+      // shifts up a few pixels — acceptable UX cost for the unblock.
+      resizeToAvoidBottomInset: true,
+      // Tap anywhere outside the input to dismiss the keyboard. Doubles as
+      // an escape hatch on the off-chance the OS keyboard ever covers the
+      // CTA again (e.g. third-party keyboard with taller bar).
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SafeArea(
         child: Column(
           children: [
             PettiStepHeader(step: 2, total: 4, onBack: widget.onBackToScanner),
@@ -132,6 +145,7 @@ class _A4ManualImeiScreenState extends State<A4ManualImeiScreen> {
           ],
         ),
       ),
+      ), // GestureDetector
       // Hidden numeric input bound to the focus node so the OS keyboard
       // drives the segmented display via setState.
       bottomSheet: Offstage(

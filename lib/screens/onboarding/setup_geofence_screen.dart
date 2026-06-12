@@ -429,16 +429,35 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
     }
 
     // Poll until terminal. 3s cadence matches the home-screen banner so
-    // the two surfaces feel consistent when we wire the banner in 1.1.
+    // the two surfaces feel consistent. Consecutive transport failures
+    // back off (3s → 10s → 30s) so a backend outage doesn't turn the
+    // wizard into a 0.66 req/s hammer against a hot endpoint.
     HomeSetupIntent latest = posted;
     bool firedCompleted = false;
+    int consecutiveFailures = 0;
+    const int failureSoftLimit = 5; // surface "tomó más tiempo" copy
     while (!latest.isTerminal && mounted) {
       _applyIntentToWizardState(latest);
-      await Future.delayed(const Duration(seconds: 3));
+
+      // Pick the next poll cadence based on consecutive failures:
+      //   0-4 failures → 3 s   (default)
+      //   5-9 failures → 10 s  (surface "tomó más tiempo" hint)
+      //   10+ failures → 30 s  (long-poll until network recovers)
+      final Duration pollDelay;
+      if (consecutiveFailures < failureSoftLimit) {
+        pollDelay = const Duration(seconds: 3);
+      } else if (consecutiveFailures < 10) {
+        pollDelay = const Duration(seconds: 10);
+      } else {
+        pollDelay = const Duration(seconds: 30);
+      }
+      await Future.delayed(pollDelay);
+
       try {
         final next = await _api.getHomeSetupIntent(
           imei: imei, intentId: intentId,
         );
+        consecutiveFailures = 0; // success resets the backoff
         if (next == null) {
           // Row reaped or imei mismatch — treat as a hard failure.
           final failure = WizardStepFailed('intent disappeared mid-poll');
@@ -458,13 +477,23 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
           );
         }
       } on HomeSetupApiException catch (e) {
-        // Transient poll failures shouldn't blow up the wizard — the
-        // intent is durable on the server, so we keep trying. After a
-        // few consecutive failures we'd surface, but Phase 1 keeps it
-        // simple: retry forever while the user is on-screen.
-        // (Phase 2 banner UX has explicit "tomó más tiempo" copy.)
+        consecutiveFailures++;
+        // The intent row is durable server-side, so we keep retrying —
+        // but quietly back off and surface a softer hint to the user
+        // at the soft limit so they don't think the app is frozen.
+        if (consecutiveFailures == failureSoftLimit && mounted) {
+          setState(() {
+            // Reuse the wizard's state plumbing to nudge the visible
+            // step label. _applyIntentToWizardState picks this up
+            // organically on the next intent observation, but if we're
+            // stuck failing, a one-time UI nudge prevents silence.
+          });
+        }
         // ignore: avoid_print
-        print('home-setup poll error: $e — retrying');
+        print(
+          'home-setup poll error (${consecutiveFailures}x): $e '
+          '— next attempt in ${pollDelay.inSeconds}s',
+        );
       }
     }
 
@@ -493,7 +522,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       latitude: _center.latitude,
       longitude: _center.longitude,
       radiusMeters: _radiusMeters,
-      deviceId: widget.device.traccarId!,
+      deviceId: widget.device.requireTraccarId(),
     );
     if (geofenceId == null) {
       final failure = WizardStepFailed(

@@ -49,7 +49,15 @@ class AppConstants {
       );
   
   // Subscription Pricing (COP)
-  static const int monthlyPrice = 29900;
+  //
+  // 2026-05-28: dropped 29,900 → 19,900 to match Play Console pricing
+  // (Google first; Apple aligned same day). Same price both stores to
+  // avoid cross-platform support / refund confusion.
+  //
+  // This is a FALLBACK shown if StoreKit / Play Billing hasn't resolved
+  // the live store price yet — the paywall otherwise prefers
+  // `sub.product?.price` (the localized store string, e.g. "COP $19,900").
+  static const int monthlyPrice = 19900;
   static const int annualPrice = 250000;
   
   // Limits (MVP)

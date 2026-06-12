@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Besti</string>
+	<string>My Besti</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -80,7 +80,7 @@
 	          iOS gates BSSID behind location auth, not just the
 	          entitlement; see 2026-05-11 phone-side home zone plan). -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Besti usa tu ubicación para centrar el mapa y detectar tu red Wi-Fi de casa al configurar la zona de tu mascota.</string>
+	<string>My Besti usa tu ubicación para centrar el mapa y detectar tu red Wi-Fi de casa al configurar la zona de tu mascota.</string>
 
 	<!-- ALWAYS variant required by Apple's static analyzer because one of
 	     our linked iOS plugins (likely `geolocator` or the Google Maps
@@ -92,19 +92,19 @@
 	     actually call requestAlwaysAuthorization. Shipped 2026-05-20 to
 	     unblock build 3 submission. -->
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Besti puede usar tu ubicación en segundo plano para alertarte si tu mascota sale de la zona segura aunque tengas la app cerrada.</string>
+	<string>My Besti puede usar tu ubicación en segundo plano para alertarte si tu mascota sale de la zona segura aunque tengas la app cerrada.</string>
 
 	<!-- Required by `mobile_scanner` for QR-code scanning during A4
 	     onboarding. Without this, mobile_scanner throws and the camera
 	     view never appears. -->
 	<key>NSCameraUsageDescription</key>
-	<string>Besti necesita la cámara para escanear el código QR de tu dispositivo.</string>
+	<string>My Besti necesita la cámara para escanear el código QR de tu dispositivo.</string>
 
 	<!-- Required by `image_picker` even if photo selection is deferred,
 	     because the package's iOS plugin queries permission at init
 	     time on some iOS versions. -->
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Besti puede usar tu galería si decides agregar una foto de tu mascota.</string>
+	<string>My Besti puede usar tu galería si decides agregar una foto de tu mascota.</string>
 
 	<!-- ─── Background modes for push notifications ──────────────── -->
 	<!-- Required for FCM background delivery. Pairs with the
@@ -138,6 +138,19 @@
 	     Compliance. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+
+	<!-- ─── Google Sign-In client ID ─────────────────────────────── -->
+	<!-- google_sign_in_ios 5.9.x requires this to be set explicitly in
+	     Info.plist when GoogleService-Info.plist is NOT bundled into the
+	     app (we use FlutterFire's firebase_options.dart for Firebase
+	     init, so the plist is intentionally not in the Xcode resource
+	     list). Without GIDClientID the plugin throws a fatal NSException
+	     the moment _googleSignIn.signIn() fires — iOS kills the app
+	     before Dart can catch the error. The value is the CLIENT_ID
+	     (NOT reversed) from GoogleService-Info.plist. Shipped 2026-05-20
+	     after Continuar con Google was reported as crashing the app. -->
+	<key>GIDClientID</key>
+	<string>487348630652-0am4lmo6ij7kn915h61pr66tk98pthdr.apps.googleusercontent.com</string>
 
 	<!-- ─── Google Sign-In OAuth callback URL scheme ─────────────── -->
 	<!-- Required by the `google_sign_in` iOS plugin. The string below is

@@ -17,11 +17,13 @@
 // screen that gates on status (PettiMainTabsScreen, the onboarding
 // controller) re-builds + dismisses the paywall.
 
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/subscription_provider.dart';
+import '../../services/amplitude_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/petti_theme.dart';
 
@@ -65,6 +67,14 @@ class _PaywallBody extends StatefulWidget {
 
 class _PaywallBodyState extends State<_PaywallBody> {
   String? _lastShownError;
+
+  @override
+  void initState() {
+    super.initState();
+    AmplitudeService.instance.track('Paywall Viewed', properties: {
+      'allow_dismiss': widget.allowDismiss,
+    });
+  }
 
   @override
   void didUpdateWidget(covariant _PaywallBody old) {
@@ -147,44 +157,61 @@ class _PaywallBodyState extends State<_PaywallBody> {
               _featureRow('Historial completo de paseos y actividad'),
               _featureRow('Cancela cuando quieras desde tu Apple ID'),
               const SizedBox(height: PettiSpacing.s7),
+              // Same CTA on iOS + Android. The Android-specific "coming
+              // soon" block was removed 2026-05-28 along with the
+              // matching gate in petti_main_tabs_screen.dart — Phase D
+              // of the Android launch wired Google verify-purchase +
+              // the Play Developer API, so Play Billing is now a real
+              // end-to-end path. SubscriptionProvider already branches
+              // on platform under the hood (apple_iap vs google_play
+              // provider strings) so the UI doesn't need to.
               ElevatedButton(
-                onPressed: sub.isPurchaseInFlight
-                    ? null
-                    : () => sub.startPurchase(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: PettiColors.marigold,
-                  foregroundColor: PettiColors.midnight,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+                  onPressed: sub.isPurchaseInFlight
+                      ? null
+                      : () => sub.startPurchase(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PettiColors.marigold,
+                    foregroundColor: PettiColors.midnight,
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(PettiRadii.md),
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(PettiRadii.md),
+                  child: sub.isPurchaseInFlight
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation(PettiColors.midnight),
+                          ),
+                        )
+                      : const Text('Empezar prueba gratis'),
+                ),
+                const SizedBox(height: PettiSpacing.s3),
+                // Restore is intentionally tappable even while a
+                // purchase is "in flight" — it's the natural recovery
+                // path when a purchase event got dropped (StoreKit
+                // glitch, network blip, app backgrounded mid-sheet).
+                // Disabling it would leave the user with no way out
+                // short of force-quitting. The safety timer +
+                // handleAppResumed in SubscriptionProvider also help,
+                // but restore is the most direct user-controlled
+                // escape hatch.
+                TextButton(
+                  onPressed: () => sub.restorePurchases(),
+                  child: const Text(
+                    'Restaurar compra',
+                    style: TextStyle(
+                      color: PettiColors.midnight,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                child: sub.isPurchaseInFlight
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          valueColor: AlwaysStoppedAnimation(PettiColors.midnight),
-                        ),
-                      )
-                    : const Text('Empezar prueba gratis'),
-              ),
-              const SizedBox(height: PettiSpacing.s3),
-              TextButton(
-                onPressed: sub.isPurchaseInFlight ? null : () => sub.restorePurchases(),
-                child: const Text(
-                  'Restaurar compra',
-                  style: TextStyle(
-                    color: PettiColors.midnight,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
               const SizedBox(height: PettiSpacing.s2),
               // WhatsApp support — Apple-acceptable (Tractive / Fi / Whistle
               // all link external support from their paywalls). Pre-filled

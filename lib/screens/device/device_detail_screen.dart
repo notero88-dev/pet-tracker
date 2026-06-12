@@ -33,6 +33,7 @@ import '../../models/device.dart';
 import '../../models/geofence.dart';
 import '../../models/position.dart';
 import '../../providers/traccar_provider.dart';
+import '../../services/amplitude_service.dart';
 import '../../services/app_event_service.dart';
 import '../../services/device_command_events.dart';
 import '../../services/firestore_service.dart';
@@ -191,7 +192,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
   void _loadCurrentPosition() {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
-    final position = traccar.getLastPosition(widget.device.traccarId!);
+    final position = traccar.getLastPosition(widget.device.requireTraccarId());
     if (position != null) {
       setState(() {
         _currentPosition = position;
@@ -281,6 +282,26 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     return earthRadiusM * 2 * math.asin(math.sqrt(a));
   }
 
+  /// Camera target for the map. Prefers the device's live position;
+  /// falls back to the configured home-zone center so a freshly-
+  /// onboarded collar that hasn't reported GPS yet (e.g. still indoors
+  /// in low-power home mode) shows the user's house — where they and
+  /// the collar physically are — instead of an endless "Cargando
+  /// ubicación…" spinner. Null only when neither is known. When the
+  /// real fix arrives, _refreshPosition() animates the camera from the
+  /// house to the device. (UX fix 2026-06-11.)
+  LatLng? get _mapCameraTarget {
+    final pos = _currentPosition;
+    if (pos != null) return LatLng(pos.latitude, pos.longitude);
+    return _homeZoneCenter;
+  }
+
+  /// True while we're showing the home-zone fallback because the device
+  /// hasn't reported a real position yet. Drives the explanatory banner
+  /// so the centered map doesn't get mistaken for a live device fix.
+  bool get _showingHomeFallback =>
+      _currentPosition == null && _homeZoneCenter != null;
+
   /// True when the current position is inside the cached home zone.
   /// Returns false when either piece of data isn't loaded yet, so the
   /// UI conservatively shows the geocoded place name in those cases
@@ -333,7 +354,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     await traccar.refreshDevices();
 
-    final position = traccar.getLastPosition(widget.device.traccarId!);
+    final position = traccar.getLastPosition(widget.device.requireTraccarId());
     if (position != null && mounted) {
       setState(() {
         _currentPosition = position;
@@ -409,6 +430,11 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     setState(() => _isFlippingMode = true);
     // ignore: avoid_print
     print('[ModeFlip] start enabling=$enabling imei=${widget.device.uniqueId}');
+
+    AmplitudeService.instance.track('Live Mode Toggled', properties: {
+      'enabled': enabling,
+      'device_imei': widget.device.uniqueId,
+    });
 
     // Debug-dashboard activity stream — fire-and-forget. See
     // pettrack-backend/docs/plans/2026-05-12-debug-dashboard.md.
@@ -502,7 +528,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       if (enabling) {
         _startLiveUpdates();
         final traccar = Provider.of<TraccarProvider>(context, listen: false);
-        traccar.requestPositionNow(widget.device.traccarId!);
+        traccar.requestPositionNow(widget.device.requireTraccarId());
       } else {
         _startNormalUpdates();
       }
@@ -556,7 +582,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     _startLiveUpdates();
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     if (widget.device.traccarId != null) {
-      traccar.requestPositionNow(widget.device.traccarId!);
+      traccar.requestPositionNow(widget.device.requireTraccarId());
     }
     _showModeFlipSuccess(true);
   }
@@ -742,27 +768,14 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       ),
       body: Stack(
         children: [
-          // Map
-          _currentPosition != null
-              ? GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: LatLng(
-                      _currentPosition!.latitude,
-                      _currentPosition!.longitude,
-                    ),
-                    zoom: AppConstants.defaultZoom,
-                  ),
-                  markers: _markers,
-                  polylines: _polylines,
-                  circles: _circles,
-                  onMapCreated: (controller) =>
-                      _mapController = controller,
-                  myLocationButtonEnabled: true,
-                  zoomControlsEnabled: false,
-                  compassEnabled: true,
-                  mapToolbarEnabled: false,
-                )
-              : Center(
+          // Map. Renders as soon as we have EITHER a device fix or a
+          // home-zone center to anchor on; only shows the spinner when
+          // neither is known yet. See [_mapCameraTarget].
+          Builder(
+            builder: (_) {
+              final target = _mapCameraTarget;
+              if (target == null) {
+                return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -779,7 +792,24 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                       ),
                     ],
                   ),
+                );
+              }
+              return GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: target,
+                  zoom: AppConstants.defaultZoom,
                 ),
+                markers: _markers,
+                polylines: _polylines,
+                circles: _circles,
+                onMapCreated: (controller) => _mapController = controller,
+                myLocationButtonEnabled: true,
+                zoomControlsEnabled: false,
+                compassEnabled: true,
+                mapToolbarEnabled: false,
+              );
+            },
+          ),
 
           // Top header card
           Positioned(
@@ -788,6 +818,110 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             right: 0,
             child: SafeArea(child: _buildHeader()),
           ),
+
+          // "Reconectando…" pill — shown only when the Traccar
+          // WebSocket is in the reconnecting state. Previously the
+          // socket could die silently (Wi-Fi handoff, iOS suspend,
+          // Traccar restart) and the map would degrade to the slow
+          // REST poll with zero UI feedback; the user assumed live
+          // was still working. Listens to TraccarProvider via
+          // Consumer to avoid rebuilding the whole screen on
+          // unrelated state changes.
+          Positioned(
+            top: kToolbarHeight + 12,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              top: false,
+              child: Center(
+                child: Consumer<TraccarProvider>(
+                  builder: (context, traccar, _) {
+                    if (traccar.connectionStatus !=
+                        TraccarConnectionStatus.reconnecting) {
+                      return const SizedBox.shrink();
+                    }
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: PettiSpacing.s3,
+                        vertical: PettiSpacing.s2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: PettiColors.midnight.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(
+                                PettiColors.cloud,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: PettiSpacing.s2),
+                          Text(
+                            'Reconectando…',
+                            style: PettiText.body().copyWith(
+                              color: PettiColors.cloud,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+
+          // Home-fallback banner — explains that the map is centered on
+          // the user's house (not a live device fix) while the collar
+          // hasn't reported GPS yet. Without this the centered map looks
+          // like a real position. Hidden once the device reports.
+          if (_showingHomeFallback && !_showHistory)
+            Positioned(
+              left: PettiSpacing.s4,
+              right: PettiSpacing.s4,
+              bottom: PettiSpacing.s6,
+              child: SafeArea(
+                top: false,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: PettiSpacing.s4,
+                    vertical: PettiSpacing.s3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: PettiColors.midnight.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(PettiRadii.md),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.home_outlined,
+                        size: 18,
+                        color: PettiColors.cloud,
+                      ),
+                      const SizedBox(width: PettiSpacing.s3),
+                      Expanded(
+                        child: Text(
+                          'Mostrando tu casa. Cuando el collar salga y '
+                          'tome señal GPS, verás su ubicación real aquí.',
+                          style: PettiText.bodySm().copyWith(
+                            color: PettiColors.cloud,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // History viewer (when active)
           if (_showHistory)
@@ -1277,7 +1411,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
     final history = await traccar.loadPositionHistory(
-      deviceId: widget.device.traccarId!,
+      deviceId: widget.device.requireTraccarId(),
       from: yesterday,
       to: now,
     );

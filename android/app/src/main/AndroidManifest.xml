@@ -19,7 +19,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
-        android:label="Besti"
+        android:label="My Besti"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

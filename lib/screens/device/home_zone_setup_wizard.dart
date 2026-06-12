@@ -31,6 +31,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/device.dart';
 import '../../screens/main/petti_main_tabs_screen.dart';
+import '../../services/amplitude_service.dart';
 import '../../services/mode8_configuration_controller.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/zona_casa_illustrations.dart';
@@ -290,11 +291,21 @@ class _HomeZoneSetupWizardState extends State<HomeZoneSetupWizard> {
       if (!mounted) return;
       if (outcome is Mode8WizardSuccess) {
         _queuedForWake = false;
+        AmplitudeService.instance.track('Home Zone Configured', properties: {
+          'device_imei': widget.device.uniqueId,
+          'radius_meters': _radiusMeters,
+          'queued': false,
+        });
         _goto(_Step.success);
       } else if (outcome is Mode8WizardQueued) {
         // Device offline / asleep — runner queued the commands.
         // Success screen shows a slightly different message.
         _queuedForWake = true;
+        AmplitudeService.instance.track('Home Zone Configured', properties: {
+          'device_imei': widget.device.uniqueId,
+          'radius_meters': _radiusMeters,
+          'queued': true,
+        });
         _goto(_Step.success);
       } else if (outcome is Mode8WizardError) {
         setState(() {

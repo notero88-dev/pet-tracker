@@ -186,7 +186,7 @@ class _PetRichCard extends StatelessWidget {
     final palette = petAvatarFor(name);
 
     final position = device != null && device!.traccarId != null
-        ? traccar.getLastPosition(device!.traccarId!)
+        ? traccar.getLastPosition(device!.requireTraccarId())
         : null;
     final bool isOnline = device?.isOnline ?? false;
     final int? battery = position?.batteryLevel;

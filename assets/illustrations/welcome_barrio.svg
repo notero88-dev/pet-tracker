@@ -1,0 +1,72 @@
+<!-- Barrio Besti — full-bleed neighborhood illustration that backs the
+     welcome screen. Ported 1:1 from the design handoff bundle (Besti Intro
+     Variation A · "Barrio dorado", 2026-05-20). viewBox is device-height so
+     the illustration covers the whole screen on standard iPhone aspect
+     ratios; preserveAspectRatio="xMidYMid slice" in the consumer handles
+     letterboxing. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="402" height="874" viewBox="0 0 402 874" fill="none">
+  <!-- rolling warm horizon ellipses — give a sense of distance -->
+  <ellipse cx="201" cy="240" rx="340" ry="180" fill="#F0B556" opacity="0.45"/>
+  <ellipse cx="201" cy="520" rx="420" ry="240" fill="#E8A33D" opacity="0.55"/>
+  <ellipse cx="201" cy="820" rx="460" ry="260" fill="#D89320" opacity="0.55"/>
+
+  <!-- abstract street curves (around pin level) -->
+  <path d="M-20 220 Q 80 170 200 200 T 430 180" stroke="rgba(15,27,46,0.10)" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M-20 300 Q 110 260 220 290 T 430 280" stroke="rgba(15,27,46,0.10)" stroke-width="3" fill="none" stroke-linecap="round"/>
+
+  <!-- lower hills (subtle, behind the wordmark) -->
+  <path d="M-20 600 Q 100 555 200 585 T 430 575" stroke="rgba(15,27,46,0.08)" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M-20 720 Q 130 680 220 710 T 430 700" stroke="rgba(15,27,46,0.08)" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- main route (dotted trail leading up to the pin's tip ~y=336) -->
+  <path d="M60 470 Q 110 430 150 440 Q 200 450 220 400 Q 240 350 200 336"
+        stroke="#0F1B2E" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="2 9"/>
+
+  <!-- white peaked house — left of pin -->
+  <g transform="translate(40 240)">
+    <path d="M0 22 L18 4 L36 22 V46 H0z" fill="#FBF6EC"/>
+    <path d="M0 22 L18 4 L36 22 V46 H0z" stroke="#0F1B2E" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+    <rect x="13" y="28" width="10" height="18" fill="#0F1B2E"/>
+  </g>
+  <!-- tall building — right of pin -->
+  <g transform="translate(310 210)">
+    <rect x="0" y="0" width="32" height="56" fill="#FBF6EC" stroke="#0F1B2E" stroke-width="2.5"/>
+    <rect x="6" y="10" width="8" height="8" fill="#0F1B2E"/>
+    <rect x="18" y="10" width="8" height="8" fill="#0F1B2E"/>
+    <rect x="6" y="26" width="8" height="8" fill="#0F1B2E"/>
+    <rect x="18" y="26" width="8" height="8" fill="#0F1B2E"/>
+  </g>
+  <!-- red peaked house — lower right -->
+  <g transform="translate(280 310)">
+    <path d="M0 18 L16 4 L32 18 V42 H0z" fill="#E8714B"/>
+    <path d="M0 18 L16 4 L32 18 V42 H0z" stroke="#0F1B2E" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+    <rect x="12" y="24" width="8" height="18" fill="#0F1B2E"/>
+  </g>
+
+  <!-- trees -->
+  <g transform="translate(110 320)">
+    <rect x="6" y="14" width="4" height="20" fill="#0F1B2E"/>
+    <circle cx="8" cy="12" r="14" fill="#7CA982" stroke="#0F1B2E" stroke-width="2.5"/>
+  </g>
+  <g transform="translate(250 440)">
+    <rect x="6" y="14" width="4" height="20" fill="#0F1B2E"/>
+    <circle cx="8" cy="12" r="12" fill="#7CA982" stroke="#0F1B2E" stroke-width="2.5"/>
+  </g>
+  <g transform="translate(355 370)">
+    <rect x="6" y="14" width="4" height="20" fill="#0F1B2E"/>
+    <circle cx="8" cy="12" r="12" fill="#7CA982" stroke="#0F1B2E" stroke-width="2.5"/>
+  </g>
+
+  <!-- ghost-pin markers (other pets nearby) -->
+  <g transform="translate(75 430)">
+    <path d="M10 0c-6 0-10 5-10 10 0 7 8 14 10 16 2-2 10-9 10-16 0-5-4-10-10-10z" fill="#FBF6EC" stroke="#0F1B2E" stroke-width="2"/>
+    <circle cx="10" cy="10" r="3" fill="#0F1B2E"/>
+  </g>
+  <g transform="translate(330 430)">
+    <path d="M10 0c-6 0-10 5-10 10 0 7 8 14 10 16 2-2 10-9 10-16 0-5-4-10-10-10z" fill="#FBF6EC" stroke="#0F1B2E" stroke-width="2"/>
+    <circle cx="10" cy="10" r="3" fill="#0F1B2E"/>
+  </g>
+
+  <!-- drop shadow under hero pin tip -->
+  <ellipse cx="200" cy="338" rx="48" ry="8" fill="rgba(15,27,46,0.22)"/>
+</svg>

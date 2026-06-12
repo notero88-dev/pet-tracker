@@ -28,6 +28,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
+import '../services/amplitude_service.dart';
 import '../services/subscription_api.dart';
 
 /// Status enum the UI gates on. Maps 1:1 to the backend's `status`
@@ -75,7 +76,22 @@ SubscriptionStatus _statusFromString(String s) {
       // refunded keeps the enum smaller.
       return SubscriptionStatus.refunded;
     default:
-      return SubscriptionStatus.none;
+      // Unknown string from the backend → fall back to `unknown`, NOT
+      // `none`. `none` triggers the full-screen paywall takeover;
+      // mapping a brand-new backend status (e.g. a future `paused` or
+      // `suspended` introduced in v2) to `none` would silently lock
+      // paying users out the day the new status starts showing up in
+      // /me responses. `unknown` keeps the prior state in
+      // refreshFromBackend's catch path and lets the next legitimate
+      // refresh recover.
+      // ignore: avoid_print
+      assert(() {
+        debugPrint(
+          'SubscriptionProvider: unknown subscription status "$s" — treating as unknown',
+        );
+        return true;
+      }());
+      return SubscriptionStatus.unknown;
   }
 }
 
@@ -93,6 +109,25 @@ class SubscriptionProvider extends ChangeNotifier {
 
   StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
   bool _isInitialized = false;
+
+  /// Firebase uid `initialize()` last ran for. Used to detect an
+  /// account switch within a single app session: app-scoped providers
+  /// are NOT torn down on sign-out, so without this the second account
+  /// in a session would keep the first account's `_status` and skip the
+  /// paywall (the cross-account carryover bug, 2026-06-01). When the uid
+  /// changes we re-fetch /me even though `_isInitialized` is already true.
+  String? _initializedForUid;
+
+  /// Safety timer for startPurchase(). If StoreKit / Play Billing
+  /// drops the purchase event (network blip during the sheet, app
+  /// backgrounded mid-sheet, etc.) the purchaseStream listener may
+  /// never fire and `_isPurchaseInFlight` would otherwise stay true
+  /// indefinitely — the CTA button stays a permanent spinner with
+  /// no recovery short of force-quitting the app. The timer ensures
+  /// the flag is cleared after `_purchaseSafetyTimeout` so the user
+  /// can retry / restore. Cancelled on any terminal stream event.
+  Timer? _purchaseSafetyTimer;
+  static const Duration _purchaseSafetyTimeout = Duration(seconds: 60);
 
   // ── Public state ─────────────────────────────────────────────────
 
@@ -123,11 +158,18 @@ class SubscriptionProvider extends ChangeNotifier {
 
   // ── Initialization ───────────────────────────────────────────────
 
-  /// Wire the purchase stream + do an initial /me fetch. Safe to
-  /// call multiple times — the second call is a no-op.
-  Future<void> initialize() async {
-    if (_isInitialized) return;
+  /// Wire the purchase stream + do an initial /me fetch.
+  ///
+  /// Pass the signed-in user's Firebase [uid]. Calling again for the SAME
+  /// uid is a no-op (cheap re-entry from PettiMainTabsScreen.initState).
+  /// Calling for a DIFFERENT uid — i.e. a second account in the same app
+  /// session — forces a fresh /me fetch so the new account never inherits
+  /// the previous account's status. See [_initializedForUid] and
+  /// [reset] for the carryover-bug rationale (2026-06-01).
+  Future<void> initialize({String? uid}) async {
+    if (_isInitialized && uid == _initializedForUid) return;
     _isInitialized = true;
+    _initializedForUid = uid;
 
     // 1. Subscribe to purchase events from the store. The stream
     // fires on:
@@ -136,7 +178,10 @@ class SubscriptionProvider extends ChangeNotifier {
     //     subscriptions automatically on iOS; Android needs an
     //     explicit restorePurchases() call)
     //   - state changes (subscription renewed in background, etc.)
-    _purchaseSub = _iap.purchaseStream.listen(
+    //
+    // The store purchase stream is account-independent, so we subscribe
+    // exactly once and keep it across account switches (`??=`).
+    _purchaseSub ??= _iap.purchaseStream.listen(
       _onPurchaseUpdates,
       onError: (e) {
         if (kDebugMode) debugPrint('SubscriptionProvider: purchaseStream error: $e');
@@ -156,7 +201,52 @@ class SubscriptionProvider extends ChangeNotifier {
   @override
   void dispose() {
     _purchaseSub?.cancel();
+    _purchaseSafetyTimer?.cancel();
     super.dispose();
+  }
+
+  /// Clear all user-specific subscription state. Call this on sign-out.
+  ///
+  /// This provider is constructed once at app root and lives for the whole
+  /// process, so without an explicit reset the next account signed into the
+  /// same app session inherits this account's `status` — which lets them
+  /// skip the paywall ("looks like it already paid"). Resetting
+  /// `_isInitialized` + `_initializedForUid` also re-arms `initialize()` so
+  /// the next account does a fresh /me fetch. (Cross-account carryover bug,
+  /// 2026-06-01.)
+  ///
+  /// Deliberately does NOT cancel `_purchaseSub`: the store purchase stream
+  /// is account-independent and should survive a sign-out so a returning
+  /// user's restored purchases still land.
+  void reset() {
+    _status = SubscriptionStatus.unknown;
+    _subscription = null;
+    _isPurchaseInFlight = false;
+    _lastError = null;
+    _isInitialized = false;
+    _initializedForUid = null;
+    _purchaseSafetyTimer?.cancel();
+    _purchaseSafetyTimer = null;
+    notifyListeners();
+  }
+
+  /// Called from the root WidgetsBindingObserver on
+  /// AppLifecycleState.resumed. If the user backgrounded the app
+  /// mid-purchase (a common way to silently break the IAP stream),
+  /// clear the in-flight flag so the paywall can be tapped again
+  /// and re-pull the canonical /me state. A purchase that actually
+  /// completed in the meantime will land on the stream listener
+  /// either way — _onPurchaseUpdates doesn't gate on
+  /// _isPurchaseInFlight to run.
+  void handleAppResumed() {
+    if (_isPurchaseInFlight) {
+      _purchaseSafetyTimer?.cancel();
+      _isPurchaseInFlight = false;
+      notifyListeners();
+    }
+    // Always pull canonical state on resume — the IAP webhook may
+    // have landed while the app was backgrounded.
+    unawaited(refreshFromBackend());
   }
 
   // ── Public actions ───────────────────────────────────────────────
@@ -219,6 +309,11 @@ class SubscriptionProvider extends ChangeNotifier {
     }
     _isPurchaseInFlight = true;
     _lastError = null;
+    // Start the safety timer BEFORE we await — if the await itself
+    // hangs we still get the auto-clear. Reset on every call so a
+    // user tapping retry after a stale state gets a fresh 60s window.
+    _purchaseSafetyTimer?.cancel();
+    _purchaseSafetyTimer = Timer(_purchaseSafetyTimeout, _onPurchaseSafetyTimeout);
     notifyListeners();
     try {
       final param = PurchaseParam(productDetails: product);
@@ -231,8 +326,26 @@ class SubscriptionProvider extends ChangeNotifier {
     } catch (e) {
       _lastError = 'No pudimos iniciar la compra: $e';
       _isPurchaseInFlight = false;
+      _purchaseSafetyTimer?.cancel();
+      _purchaseSafetyTimer = null;
       notifyListeners();
     }
+  }
+
+  /// Fires when the safety timer elapses without any terminal stream
+  /// event. Conservatively clears the in-flight flag and surfaces an
+  /// actionable message. A purchase that actually completes later
+  /// will still process correctly via _onPurchaseUpdates — we don't
+  /// gate that path on _isPurchaseInFlight.
+  void _onPurchaseSafetyTimeout() {
+    if (!_isPurchaseInFlight) return; // already resolved cleanly
+    _isPurchaseInFlight = false;
+    _lastError = 'No pudimos completar la compra. Reintenta o usa '
+        '"Restaurar compra" si ya pagaste.';
+    if (kDebugMode) {
+      debugPrint('SubscriptionProvider: purchase safety timeout fired');
+    }
+    notifyListeners();
   }
 
   /// User tapped "Restaurar compra" on the paywall. Useful for users
@@ -269,7 +382,13 @@ class SubscriptionProvider extends ChangeNotifier {
         case PurchaseStatus.purchased:
         case PurchaseStatus.restored:
           // The crucial path: verify with our backend.
+          final wasRestore = purchase.status == PurchaseStatus.restored;
           await _verifyAndRefresh(purchase);
+          if (wasRestore && _lastError == null) {
+            AmplitudeService.instance.track('Purchase Restored', properties: {
+              'product_id': purchase.productID,
+            });
+          }
           // ALWAYS call completePurchase, even after restored events.
           // Failing to do so means iOS will keep replaying this
           // purchase on every cold launch.
@@ -277,12 +396,20 @@ class SubscriptionProvider extends ChangeNotifier {
             await _iap.completePurchase(purchase);
           }
           _isPurchaseInFlight = false;
+          _purchaseSafetyTimer?.cancel();
+          _purchaseSafetyTimer = null;
           notifyListeners();
           break;
 
         case PurchaseStatus.error:
+          AmplitudeService.instance.track('Purchase Failed', properties: {
+            'product_id': purchase.productID,
+            'error_message': purchase.error?.message ?? 'unknown',
+          });
           _lastError = purchase.error?.message ?? 'Error desconocido durante la compra';
           _isPurchaseInFlight = false;
+          _purchaseSafetyTimer?.cancel();
+          _purchaseSafetyTimer = null;
           if (purchase.pendingCompletePurchase) {
             await _iap.completePurchase(purchase);
           }
@@ -293,6 +420,8 @@ class SubscriptionProvider extends ChangeNotifier {
           // User dismissed the sheet without buying. No error UI.
           _lastError = null;
           _isPurchaseInFlight = false;
+          _purchaseSafetyTimer?.cancel();
+          _purchaseSafetyTimer = null;
           if (purchase.pendingCompletePurchase) {
             await _iap.completePurchase(purchase);
           }
@@ -302,40 +431,93 @@ class SubscriptionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _verifyAndRefresh(PurchaseDetails purchase) async {
-    try {
-      // For iOS StoreKit 2, `serverVerificationData` is the signed
-      // transaction JWT — exactly what our backend's
-      // appleReceiptVerifier expects. For older StoreKit 1 + Android
-      // this is a different format (raw receipt blob / purchase
-      // token JSON) which our backend doesn't currently understand.
-      // v1 = iOS-only; Phase C+ wires Android.
-      final provider = _platformProvider();
-      if (provider == 'google_play') {
-        // Defensive: the backend returns 501 for google_play in v1.
-        // Refresh /me after a delay in case the RTDN webhook already
-        // landed and grew the row.
-        if (kDebugMode) debugPrint('SubscriptionProvider: google_play verify not implemented in v1');
-        await Future<void>.delayed(const Duration(seconds: 3));
-        await refreshFromBackend();
-        return;
-      }
+  /// Retry schedule for the iOS verify-purchase call. The Apple
+  /// transaction stays in `pendingCompletePurchase` until we call
+  /// `_iap.completePurchase`, so retrying the backend call is safe —
+  /// the worst that happens is the user sees "Reintentando…" for a
+  /// few extra seconds while we recover from a 5xx blip. After the
+  /// last attempt fails we fall back to a /me refresh in case the
+  /// ASSN webhook already landed.
+  static const List<Duration> _verifyRetryDelays = [
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 8),
+  ];
 
-      final updated = await _api.verifyPurchase(
-        provider: provider,
-        productId: purchase.productID,
-        signedTransactionInfo: purchase.verificationData.serverVerificationData,
-      );
-      _subscription = updated;
-      _status = _statusFromString(updated.status);
-      _lastError = null;
-    } catch (e) {
-      _lastError = 'No pudimos verificar la compra con el servidor. '
-          'Si te cobraron, escríbenos a soporte.';
-      if (kDebugMode) debugPrint('SubscriptionProvider: verifyPurchase failed: $e');
-      // Fall back to a /me refresh — maybe the webhook beat us to it.
-      await refreshFromBackend();
+  Future<void> _verifyAndRefresh(PurchaseDetails purchase) async {
+    // `serverVerificationData` carries different payloads per platform:
+    //   - iOS StoreKit 2: the signed transaction JWT (Apple-CA chained)
+    //   - Android: the opaque purchaseToken Google Play Billing returns
+    // The backend POST /subscriptions/verify-purchase route accepts the
+    // field under either key (`signedTransactionInfo` for back-compat
+    // with this client; `purchaseToken` for the Android branch). One
+    // call site, one retry loop — backend branches on `provider`.
+    //
+    // Was previously a Google skip + /me poll (defensive against the
+    // 501 the backend used to return for google_play). Removed
+    // 2026-06-02 once Phase D went live: backend now verifies Google
+    // purchases against the Play Developer API V2 just like Apple.
+    // Without /verify-purchase being called, the RTDN webhook arrives
+    // orphaned and gets ack+skipped, so the row never gets created —
+    // exactly the bug that showed up on the first Android test
+    // (Google charged + sent SUBSCRIPTION_PURCHASED to RTDN, but the
+    // app never told the backend anything → paywall stuck).
+    final provider = _platformProvider();
+
+    // Try the verify call up to 4 times (1 initial + 3 retries).
+    // Surface "Reintentando…" copy between attempts so a paying user
+    // sees progress instead of an apparent freeze on a transient 5xx.
+    final maxAttempts = 1 + _verifyRetryDelays.length;
+    Object? lastError;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final updated = await _api.verifyPurchase(
+          provider: provider,
+          productId: purchase.productID,
+          signedTransactionInfo:
+              purchase.verificationData.serverVerificationData,
+        );
+        _subscription = updated;
+        final newStatus = _statusFromString(updated.status);
+        _status = newStatus;
+        _lastError = null;
+        if (newStatus == SubscriptionStatus.inTrial) {
+          AmplitudeService.instance.track('Trial Started', properties: {
+            'product_id': purchase.productID,
+            'provider': provider,
+          });
+        } else if (newStatus == SubscriptionStatus.active) {
+          AmplitudeService.instance.track('Subscription Started', properties: {
+            'product_id': purchase.productID,
+            'provider': provider,
+          });
+        }
+        return;
+      } catch (e) {
+        lastError = e;
+        if (kDebugMode) {
+          debugPrint(
+            'SubscriptionProvider: verifyPurchase attempt ${attempt + 1}/$maxAttempts failed: $e',
+          );
+        }
+        if (attempt < _verifyRetryDelays.length) {
+          _lastError = 'Reintentando verificación…';
+          notifyListeners();
+          await Future<void>.delayed(_verifyRetryDelays[attempt]);
+        }
+      }
     }
+
+    // All attempts exhausted. Surface the support message and fall
+    // back to /me — the ASSN webhook may have written the row in the
+    // meantime, which gets us out of the bad state without user
+    // intervention.
+    _lastError = 'No pudimos verificar la compra con el servidor. '
+        'Si te cobraron, escríbenos a soporte.';
+    if (kDebugMode) {
+      debugPrint('SubscriptionProvider: verifyPurchase exhausted: $lastError');
+    }
+    await refreshFromBackend();
   }
 
   String _platformProvider() {

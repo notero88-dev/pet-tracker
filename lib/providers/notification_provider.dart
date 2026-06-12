@@ -47,7 +47,7 @@ class NotificationProvider with ChangeNotifier {
         _notifications.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       }
     } catch (e) {
-      print('Error loading notifications: $e');
+      debugPrint('Error loading notifications: $e');
     }
   }
 
@@ -60,7 +60,7 @@ class NotificationProvider with ChangeNotifier {
       );
       await prefs.setString('notifications', notificationsJson);
     } catch (e) {
-      print('Error saving notifications: $e');
+      debugPrint('Error saving notifications: $e');
     }
   }
 
@@ -74,7 +74,7 @@ class NotificationProvider with ChangeNotifier {
         _settings = NotificationSettings.fromJson(jsonDecode(settingsJson));
       }
     } catch (e) {
-      print('Error loading notification settings: $e');
+      debugPrint('Error loading notification settings: $e');
     }
   }
 
@@ -87,7 +87,7 @@ class NotificationProvider with ChangeNotifier {
         jsonEncode(_settings.toJson()),
       );
     } catch (e) {
-      print('Error saving notification settings: $e');
+      debugPrint('Error saving notification settings: $e');
     }
   }
 

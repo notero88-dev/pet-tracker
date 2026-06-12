@@ -83,6 +83,10 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
   Future<void> _saveMode() async {
     setState(() => _savingMode = true);
 
+    // wifiPriority (Mode 9) takes two args (t1Minutes + t2Hours) instead
+    // of a single interval — we hardcode sensible defaults from
+    // mode_picker.dart so the UI stays single-stepper. Power-user tuning
+    // is a follow-up.
     final result = await _api.setMode(
       imei: widget.device.uniqueId,
       mode: _pettiToApiMode(_mode),
@@ -90,6 +94,10 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
           ? _interval
           : null,
       intervalHours: _mode == PettiMode.deepSleep ? _interval : null,
+      t1Minutes:
+          _mode == PettiMode.wifiPriority ? kPettiWifiPriorityT1Minutes : null,
+      t2Hours:
+          _mode == PettiMode.wifiPriority ? kPettiWifiPriorityT2Hours : null,
     );
 
     if (!mounted) return;
@@ -175,13 +183,15 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                 const SizedBox(height: 18),
                 _deviceHeaderCard(),
                 if (_offline) _offlineBanner(),
-                const PettiSectionHeader('Modo de rastreo'),
-                _modeCard(),
+                // 2026-05-20: Modo de rastreo + Zona peligrosa sections
+                // removed at Nico's request — keeping settings page focused
+                // on the controls that matter day-to-day. Underlying
+                // _modeCard() and _dangerZone() methods are left in the
+                // file for now (dead code) in case we re-introduce.
                 const PettiSectionHeader('Zona segura'),
                 _zonaSeguraCard(),
                 const PettiSectionHeader('Información del dispositivo'),
                 _deviceInfoCard(),
-                _dangerZone(),
               ],
             ),
           ],
@@ -340,7 +350,9 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
   }
 
   // --- Mode card ---
-
+  // Currently unrendered (Modo de rastreo section removed 2026-05-20).
+  // Kept for potential re-introduction.
+  // ignore: unused_element
   Widget _modeCard() {
     return PettiCard(
       child: Column(
@@ -364,16 +376,21 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
             },
           ),
           const SizedBox(height: PettiSpacing.s3 + 2),
-          PettiIntervalStepper(
-            mode: _mode,
-            value: _interval,
-            disabled: _offline,
-            onChanged: (v) => setState(() {
-              _interval = v;
-              _dirty = true;
-            }),
-          ),
-          const SizedBox(height: PettiSpacing.s3 + 2),
+          // wifiPriority has no single-interval contract; hide the stepper
+          // for that mode (DeviceSettings sends hardcoded t1/t2 defaults
+          // from mode_picker.dart instead).
+          if (_mode != PettiMode.wifiPriority) ...[
+            PettiIntervalStepper(
+              mode: _mode,
+              value: _interval,
+              disabled: _offline,
+              onChanged: (v) => setState(() {
+                _interval = v;
+                _dirty = true;
+              }),
+            ),
+            const SizedBox(height: PettiSpacing.s3 + 2),
+          ],
           PettiBatteryEstimateCard(mode: _mode, interval: _interval),
           const SizedBox(height: PettiSpacing.s3 + 2),
           PettiCta(
@@ -437,7 +454,9 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
   }
 
   // --- Danger zone ---
-
+  // Currently unrendered (Zona peligrosa section removed 2026-05-20).
+  // Kept for potential re-introduction.
+  // ignore: unused_element
   Widget _dangerZone() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -488,6 +507,8 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
         return TrackingMode.realtime;
       case PettiMode.home:
         return TrackingMode.home;
+      case PettiMode.wifiPriority:
+        return TrackingMode.wifiPriority;
       case PettiMode.deepSleep:
         return TrackingMode.deepSleep;
     }

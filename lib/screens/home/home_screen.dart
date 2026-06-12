@@ -405,8 +405,8 @@ class _PetCardState extends State<_PetCard> {
     super.didUpdateWidget(old);
     // Device's last position can shift over time as new Traccar fixes
     // arrive; re-resolve if the coords moved enough to matter.
-    final oldPos = old.traccar.getLastPosition(old.device.traccarId!);
-    final newPos = widget.traccar.getLastPosition(widget.device.traccarId!);
+    final oldPos = old.traccar.getLastPosition(old.device.requireTraccarId());
+    final newPos = widget.traccar.getLastPosition(widget.device.requireTraccarId());
     if (oldPos?.latitude != newPos?.latitude ||
         oldPos?.longitude != newPos?.longitude) {
       _resolveNearestPlace();
@@ -414,7 +414,7 @@ class _PetCardState extends State<_PetCard> {
   }
 
   Future<void> _resolveNearestPlace() async {
-    final position = widget.traccar.getLastPosition(widget.device.traccarId!);
+    final position = widget.traccar.getLastPosition(widget.device.requireTraccarId());
     if (position == null) return;
     final name = await ReverseGeocoder.instance.nearestPlace(
       position.latitude,
@@ -431,7 +431,7 @@ class _PetCardState extends State<_PetCard> {
     final device = widget.device;
     final traccar = widget.traccar;
     final pet = widget.pet;
-    final position = traccar.getLastPosition(device.traccarId!);
+    final position = traccar.getLastPosition(device.requireTraccarId());
     final bool isOnline = device.isOnline;
     final DateTime? lastUpdate = device.lastUpdate as DateTime?;
     final int? battery = position?.batteryLevel;

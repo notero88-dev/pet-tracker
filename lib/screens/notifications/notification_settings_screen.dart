@@ -245,7 +245,7 @@ class _NotificationSettingsScreenState
       ),
       value: value,
       onChanged: onChanged,
-      activeColor: PettiColors.marigold,
+      activeThumbColor: PettiColors.marigold,
     );
   }
 

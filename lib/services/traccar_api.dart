@@ -1,5 +1,8 @@
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
 import '../utils/constants.dart';
 import '../models/device.dart';
 import '../models/position.dart';
@@ -25,6 +28,50 @@ class TraccarApi {
   Future<bool> login(String email, String password) async {
     _authHeader = 'Basic ${base64Encode(utf8.encode('$email:$password'))}';
     return true;
+  }
+
+  /// Establish a Traccar server-side session and return the `JSESSIONID`
+  /// cookie value, or null on failure.
+  ///
+  /// Why this exists separately from [login]: Basic auth works for the HTTP
+  /// REST API (Traccar accepts it on `/api/devices`, `/api/positions`, etc.)
+  /// but NOT for the WebSocket upgrade. The `/api/socket` endpoint requires
+  /// a `JSESSIONID` cookie tied to a server-side session. POST `/api/session`
+  /// with form-urlencoded credentials creates that session and Set-Cookie's
+  /// the JSESSIONID back. The Flutter WS client then has to pass this as
+  /// `Cookie: JSESSIONID=...` on the upgrade request.
+  ///
+  /// Without this dance, Traccar silently returns HTTP 200 (empty body)
+  /// instead of HTTP 101 Switching Protocols → Dart's WebSocketChannel
+  /// throws "was not upgraded to websocket" → no real-time positions ever.
+  /// (Diagnosed 2026-05-09.)
+  Future<String?> establishSession({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/session'),
+        headers: const {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+        },
+        body: {
+          'email': email,
+          'password': password,
+        },
+      );
+      if (res.statusCode != 200) return null;
+      // Set-Cookie header may have multiple values delimited by commas, but
+      // Dart's http package collapses them into one header string. Look for
+      // `JSESSIONID=...` and extract up to the first `;`.
+      final raw = res.headers['set-cookie'];
+      if (raw == null) return null;
+      final match = RegExp(r'JSESSIONID=([^;]+)').firstMatch(raw);
+      return match?.group(1);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Get headers with Basic auth
@@ -95,7 +142,7 @@ class TraccarApi {
       }
       return null;
     } catch (e) {
-      print('Error getting device: $e');
+      debugPrint('Error getting device: $e');
       return null;
     }
   }
@@ -118,7 +165,7 @@ class TraccarApi {
       }
       return null;
     } catch (e) {
-      print('Error getting position: $e');
+      debugPrint('Error getting position: $e');
       return null;
     }
   }
@@ -146,7 +193,7 @@ class TraccarApi {
       }
       return [];
     } catch (e) {
-      print('Error getting position history: $e');
+      debugPrint('Error getting position history: $e');
       return [];
     }
   }
@@ -173,7 +220,7 @@ class TraccarApi {
       }
       return null;
     } catch (e) {
-      print('Error creating geofence: $e');
+      debugPrint('Error creating geofence: $e');
       return null;
     }
   }
@@ -192,7 +239,7 @@ class TraccarApi {
 
       return response.statusCode == 200;
     } catch (e) {
-      print('Error linking geofence: $e');
+      debugPrint('Error linking geofence: $e');
       return false;
     }
   }
@@ -211,7 +258,7 @@ class TraccarApi {
       }
       return [];
     } catch (e) {
-      print('Error getting geofences: $e');
+      debugPrint('Error getting geofences: $e');
       return [];
     }
   }
@@ -225,7 +272,7 @@ class TraccarApi {
       );
       return response.statusCode == 204;
     } catch (e) {
-      print('Error deleting geofence: $e');
+      debugPrint('Error deleting geofence: $e');
       return false;
     }
   }
@@ -248,7 +295,7 @@ class TraccarApi {
       );
       return response.statusCode == 200;
     } catch (e) {
-      print('Error sending command: $e');
+      debugPrint('Error sending command: $e');
       return false;
     }
   }
@@ -261,7 +308,7 @@ class TraccarApi {
         headers: _headers,
       );
     } catch (e) {
-      print('Logout error: $e');
+      debugPrint('Logout error: $e');
     }
     _authHeader = null;
   }

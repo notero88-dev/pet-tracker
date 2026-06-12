@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/device.dart';
 import '../providers/traccar_provider.dart';
+import '../services/amplitude_service.dart';
+import '../services/app_event_service.dart';
 import '../utils/constants.dart';
 
 /// Bottom sheet with device commands
@@ -44,7 +46,7 @@ class DeviceCommandsSheet extends StatelessWidget {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2D6A4F).withOpacity(0.1),
+                    color: const Color(0xFF2D6A4F).withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -146,10 +148,10 @@ class DeviceCommandsSheet extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.05),
+            color: color.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: color.withOpacity(0.2),
+              color: color.withValues(alpha: 0.2),
             ),
           ),
           child: Row(
@@ -158,7 +160,7 @@ class DeviceCommandsSheet extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: color.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -194,7 +196,7 @@ class DeviceCommandsSheet extends StatelessWidget {
               Icon(
                 Icons.arrow_forward_ios,
                 size: 16,
-                color: color.withOpacity(0.5),
+                color: color.withValues(alpha: 0.5),
               ),
             ],
           ),
@@ -229,8 +231,16 @@ class DeviceCommandsSheet extends StatelessWidget {
       ),
     );
 
+    AmplitudeService.instance.track('Find Now Requested', properties: {
+      'device_imei': device.uniqueId,
+    });
+
+    // Debug-dashboard activity stream — fire-and-forget. See
+    // pettrack-backend/docs/plans/2026-05-12-debug-dashboard.md.
+    AppEventService.fire('find_now_tapped', deviceImei: device.uniqueId);
+
     try {
-      await traccar.requestPositionNow(device.traccarId!);
+      await traccar.requestPositionNow(device.requireTraccarId());
       
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -286,7 +296,7 @@ class DeviceCommandsSheet extends StatelessWidget {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
 
     try {
-      await traccar.setUpdateInterval(device.traccarId!, seconds);
+      await traccar.setUpdateInterval(device.requireTraccarId(), seconds);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
