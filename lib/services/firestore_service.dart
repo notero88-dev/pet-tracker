@@ -1,13 +1,45 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 /// Firestore service for user and pet profile management
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   /// Get current user ID
   String? get _currentUserId => _auth.currentUser?.uid;
+
+  /// Upload a pet photo to Firebase Storage and return its download URL.
+  ///
+  /// Path: `pet_photos/{uid}/{millisSinceEpoch}.jpg`. The timestamp keeps
+  /// successive photos for the same pet from overwriting each other (the
+  /// caller stores the returned URL on the pet doc; old objects are
+  /// orphaned but harmless — a future cleanup job can prune them).
+  ///
+  /// Returns null on any failure (no auth, upload error) so callers can
+  /// proceed without a photo rather than blocking onboarding on it.
+  Future<String?> uploadPetPhoto(File file) async {
+    final uid = _currentUserId;
+    if (uid == null) return null;
+    try {
+      final ref = _storage
+          .ref()
+          .child('pet_photos')
+          .child(uid)
+          .child('${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await ref.putFile(
+        file,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      return await ref.getDownloadURL();
+    } catch (_) {
+      return null;
+    }
+  }
 
   // ==================== USER PROFILES ====================
 
@@ -113,10 +145,23 @@ class FirestoreService {
   Future<List<Map<String, dynamic>>> getUserPets() async {
     if (_currentUserId == null) return [];
 
-    final snapshot = await _db
+    // Server-first with cache fallback. Same rationale as getUserProfile
+    // (see 2026-05-23 fix): the SDK's default behavior returns whatever
+    // is in the offline cache when the cache is "fresh enough," which
+    // can be stale by days. We hit "Aún no hay mascotas" empty state on
+    // accounts where a pet was just created via a different surface
+    // (script, admin tool, second device). Force a server hit; on
+    // network failure fall back to whatever the cache has so offline
+    // launches still render the previously-seen pets.
+    final query = _db
         .collection('pets')
-        .where('userId', isEqualTo: _currentUserId)
-        .get();
+        .where('userId', isEqualTo: _currentUserId);
+    QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await query.get(const GetOptions(source: Source.server));
+    } catch (_) {
+      snapshot = await query.get();
+    }
 
     final pets = snapshot.docs.map((doc) {
       final data = doc.data();

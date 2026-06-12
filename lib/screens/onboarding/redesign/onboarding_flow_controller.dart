@@ -25,12 +25,16 @@
 //   manual/paired) doesn't have that step. Adding it as A4.5 keeps the
 //   flow short while making the provisionDevice call possible.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../../models/device.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../services/amplitude_service.dart';
+import '../../../services/firestore_service.dart';
 import '../../../services/provisioning_api.dart';
 import '../../../utils/petti_theme.dart';
 import '../../device/home_zone_setup_wizard.dart';
@@ -54,6 +58,7 @@ class OnboardingPayload {
   String? imei;
   String? petName;
   PetSpecies? petSpecies;
+  File? petPhoto;             // optional local file from A4 pet profile
   Device? device;             // populated by provisionDevice
   LatLng? homeCenter;
   int? homeRadiusMeters;
@@ -145,9 +150,10 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
 
   Widget _petProfile() {
     return A4PetProfileScreen(
-      onSubmit: (name, species) {
+      onSubmit: (name, species, photo) {
         _payload.petName = name;
         _payload.petSpecies = species;
+        _payload.petPhoto = photo;
         _provisionAndAdvance();
       },
       onBack: () => _replace(_paired()),
@@ -186,6 +192,22 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
         petType: _payload.petSpecies == PetSpecies.dog ? 'dog' : 'cat',
       );
       _payload.device = device;
+      AmplitudeService.instance.track('Device Provisioned', properties: {
+        'pet_species': _payload.petSpecies == PetSpecies.dog ? 'dog' : 'cat',
+        'pairing_method': _payload.imei != null ? 'qr_or_manual' : 'unknown',
+      });
+
+      // Create the Firestore pet doc right here (name + species + photo)
+      // instead of leaving it to the lazy reconciler in
+      // PettiMainTabsScreen. The reconciler only runs after a successful
+      // Traccar login on the NEXT cold launch and creates a placeholder
+      // with no photo; doing it now means Mascotas/Salud show the real
+      // name + photo immediately, and the reconciler then skips this
+      // device (it dedupes on traccarDeviceId). Best-effort: a Firestore
+      // failure must not abort onboarding — the reconciler is the
+      // fallback. (2026-06-11.)
+      await _createPetDoc(device);
+
       overlay.remove();
       if (!mounted) return;
 
@@ -202,6 +224,30 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
         'No pudimos registrar tu Besti. Verifica tu conexión e intenta otra vez.\n\n$e',
         () => _replace(_petProfile()),
       );
+    }
+  }
+
+  /// Create the Firestore pet doc for the just-provisioned device,
+  /// uploading the optional photo first. Best-effort: any failure is
+  /// swallowed (the PettiMainTabsScreen reconciler is the fallback).
+  Future<void> _createPetDoc(Device device) async {
+    try {
+      final firestore = FirestoreService();
+      String? photoUrl;
+      final photo = _payload.petPhoto;
+      if (photo != null) {
+        photoUrl = await firestore.uploadPetPhoto(photo);
+      }
+      await firestore.createPet(
+        name: _payload.petName!,
+        type: _payload.petSpecies == PetSpecies.dog ? 'dog' : 'cat',
+        photoUrl: photoUrl,
+        traccarDeviceId: device.traccarId,
+        deviceImei: _payload.imei,
+      );
+    } catch (_) {
+      // Reconciler in PettiMainTabsScreen will create a placeholder on
+      // next launch if this didn't land. Don't block onboarding.
     }
   }
 

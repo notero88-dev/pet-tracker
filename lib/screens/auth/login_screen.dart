@@ -297,7 +297,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Sign-up CTA as outlined button — secondary action visually,
                 // primary in importance for first-time users.
                 OutlinedButton(
-                  onPressed: () => Navigator.of(context).push(
+                  // pushReplacement swaps Login↔Register without stacking;
+                  // pairs with RegisterScreen's "Inicia sesión".
+                  onPressed: () => Navigator.of(context).pushReplacement(
                     MaterialPageRoute(
                       builder: (_) => const RegisterScreen(),
                     ),

@@ -25,7 +25,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
-import 'auth/login_screen.dart';
+import 'auth/register_screen.dart';
 import 'main/petti_main_tabs_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -88,10 +88,14 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (!mounted) return;
 
+    // First launch after download: a brand-new user has no account yet,
+    // so the most-likely action is "Crear cuenta". Land on RegisterScreen
+    // (it cross-links to LoginScreen for returning users). Changed from
+    // LoginScreen 2026-06-11. Signed-in users skip straight to the app.
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) =>
-            isLoggedIn ? const PettiMainTabsScreen() : const LoginScreen(),
+            isLoggedIn ? const PettiMainTabsScreen() : const RegisterScreen(),
       ),
     );
   }

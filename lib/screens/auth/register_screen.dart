@@ -4,6 +4,7 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/petti_theme.dart';
 import '../main/petti_main_tabs_screen.dart';
+import 'login_screen.dart';
 
 /// Sign-up — Petti style.
 ///
@@ -396,7 +397,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           .copyWith(color: PettiColors.fgDim),
                     ),
                     TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                      // Swap (not push) so the auth screens never stack:
+                      // RegisterScreen is now the launch default, so a
+                      // plain pop() would land on nothing. pushReplacement
+                      // mirrors LoginScreen's "Crear una cuenta".
+                      onPressed: () => Navigator.of(context).pushReplacement(
+                        MaterialPageRoute(
+                          builder: (_) => const LoginScreen(),
+                        ),
+                      ),
                       child: Text(
                         'Inicia sesión',
                         style: PettiText.bodySm().copyWith(
