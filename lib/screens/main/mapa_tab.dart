@@ -47,8 +47,15 @@ class _MapaTabState extends State<MapaTab> {
   Widget build(BuildContext context) {
     return Consumer<TraccarProvider>(
       builder: (context, traccar, _) {
-        if (traccar.isLoading) {
-          return const Center(child: CircularProgressIndicator());
+        // Show the loading state until the post-login bootstrap has
+        // actually finished its first device-load. Gating only on
+        // `isLoading` was not enough: at first frame (before connect()
+        // runs) isLoading is false AND devices is empty, so the empty
+        // state flashed on every cold launch before the map appeared.
+        // `initialLoadComplete` closes that window — the empty state now
+        // only renders once we KNOW the account has no devices.
+        if (!traccar.initialLoadComplete || traccar.isLoading) {
+          return const _MapaLoading();
         }
         if (traccar.devices.isEmpty) {
           return _MapaEmptyState();
@@ -69,6 +76,44 @@ class _MapaTabState extends State<MapaTab> {
           onSwitchDevice: (d) => setState(() => _selectedDeviceId = d.id),
         );
       },
+    );
+  }
+}
+
+/// Branded loading state shown while the post-login bootstrap resolves
+/// the user's devices. Replaces the bare default-blue spinner so the
+/// cold-launch transition into Mapa stays on-palette (marigold on cloud).
+class _MapaLoading extends StatelessWidget {
+  const _MapaLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: PettiColors.cloud,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation(PettiColors.marigold),
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Cargando tu mascota…',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 14,
+                color: PettiColors.trail,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -90,8 +90,17 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final traccarProvider =
         Provider.of<TraccarProvider>(context, listen: false);
+    // Un-settle the loading state up front so the Mapa/Salud tabs render a
+    // spinner — not the "Aún no hay mascotas" empty state — for the whole
+    // bootstrap window (Firestore creds fetch + Traccar connect + device
+    // load). completeInitialLoad() in the finally settles it again on
+    // every exit path. See TraccarProvider.initialLoadComplete.
+    traccarProvider.beginInitialLoad();
     final userId = authProvider.currentUser?.uid;
-    if (userId == null) return;
+    if (userId == null) {
+      traccarProvider.completeInitialLoad();
+      return;
+    }
 
     try {
       final userProfile = await FirestoreService().getUserProfile(userId);
@@ -111,6 +120,13 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
       final success = await traccarProvider.connect(email, password);
       if (success) {
         await traccarProvider.refreshDevices();
+      }
+      // Devices (if any) are loaded now — settle the UI so Mapa draws the
+      // map (or its genuine empty state) immediately, BEFORE the slower
+      // Firestore pet reconciliation below. Otherwise the spinner lingers
+      // through the reconcile round-trips even though the map is ready.
+      traccarProvider.completeInitialLoad();
+      if (success) {
         // 2026-05-25: reconcile Firestore pets against Traccar devices.
         // Handles the "user has a backend device but no Firestore pet
         // doc" case, which surfaces as Mascotas / Salud showing empty
@@ -152,6 +168,12 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
         fatal: false,
       );
       debugPrint('[PettiMainTabs] Traccar init failed: $e');
+    } finally {
+      // Safety net for the early-return paths (no profile / no creds) and
+      // any error above: always settle the UI out of the loading state so
+      // a tab never spins forever. Idempotent — a no-op if the happy path
+      // already called it.
+      traccarProvider.completeInitialLoad();
     }
   }
 
