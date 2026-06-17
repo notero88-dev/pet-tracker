@@ -41,6 +41,18 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
 
   bool _isConnected = false;
   bool _isLoading = false;
+  // Distinguishes "the post-login bootstrap hasn't finished its first
+  // device-load yet" from "it finished and the account genuinely has no
+  // devices". Without this, every cold launch flashed the Mapa tab's
+  // "Aún no hay mascotas" empty state for the ~hundreds of ms between
+  // first frame and connect() setting _isLoading — because at first
+  // frame _isLoading is false AND _devices is empty. Screens gate their
+  // empty state on `initialLoadComplete` so they show a spinner during
+  // that window and only fall back to the empty state once the bootstrap
+  // has actually settled. Reset to false at the start of each bootstrap
+  // (beginInitialLoad) so an account swap re-shows the spinner instead
+  // of the previous account's state. See PettiMainTabsScreen._initializeTraccar.
+  bool _initialLoadComplete = false;
   String? _errorMessage;
 
   StreamSubscription<Position>? _positionSubscription;
@@ -77,8 +89,28 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
   List<TraccarEvent> get recentEvents => UnmodifiableListView(_recentEvents);
   bool get isConnected => _isConnected;
   bool get isLoading => _isLoading;
+  bool get initialLoadComplete => _initialLoadComplete;
   String? get errorMessage => _errorMessage;
   TraccarConnectionStatus get connectionStatus => _connectionStatus;
+
+  /// Mark the start of the post-login bootstrap. Flips the UI back to a
+  /// loading state (un-settles `initialLoadComplete`) so the Mapa/Salud
+  /// tabs show a spinner — not the empty state — while devices load.
+  /// Called by PettiMainTabsScreen before it fetches Traccar creds.
+  void beginInitialLoad() {
+    if (!_initialLoadComplete) return;
+    _initialLoadComplete = false;
+    notifyListeners();
+  }
+
+  /// Mark the bootstrap as settled. Idempotent — safe to call from both
+  /// the happy path (right after devices load) and a finally/early-return
+  /// safety net. Once true, screens may render their genuine empty state.
+  void completeInitialLoad() {
+    if (_initialLoadComplete) return;
+    _initialLoadComplete = true;
+    notifyListeners();
+  }
 
   /// Initialize connection to Traccar
   Future<bool> connect(String email, String password) async {
