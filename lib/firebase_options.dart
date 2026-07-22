@@ -40,12 +40,23 @@ class DefaultFirebaseOptions {
     storageBucket: 'pettrack-colombia.firebasestorage.app',
   );
 
+  // These MUST match the Firebase iOS app registration whose bundle ID
+  // equals this app's actual CFBundleIdentifier (co.pettrack.pettrackApp).
+  // Source of truth: ios/Runner/GoogleService-Info.plist. Previously these
+  // pointed at an OLDER registration (bundle co.pettrack.app, appId
+  // ...001e1cb9...). The Xcode bundle ID was later changed to
+  // co.pettrack.pettrackApp but this file was not updated, so Firebase
+  // initialized as the wrong app: APNs handed the device its push token,
+  // but Firebase rejected the APNs->FCM token exchange on the bundle-ID
+  // mismatch, so getToken() never resolved a token. Result: push-service
+  // "sent successfully" to a token that was never registered, and nothing
+  // arrived on device. Keep these three fields in lockstep with the plist.
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAawSByoGwaIiqZc--PSI45Rl38wptzc7w',
-    appId: '1:487348630652:ios:001e1cb9b2273ab33905f9',
+    apiKey: 'AIzaSyCPRk0Wp1dylUJK4YLOjsVqys1K_9gfH0A',
+    appId: '1:487348630652:ios:16b272ffd28639823905f9',
     messagingSenderId: '487348630652',
     projectId: 'pettrack-colombia',
     storageBucket: 'pettrack-colombia.firebasestorage.app',
-    iosBundleId: 'co.pettrack.app',
+    iosBundleId: 'co.pettrack.pettrackApp',
   );
 }
