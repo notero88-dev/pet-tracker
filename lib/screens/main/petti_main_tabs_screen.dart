@@ -34,6 +34,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/traccar_provider.dart';
+import '../../services/fcm_service.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/petti_theme.dart';
 import '../paywall/paywall_screen.dart';
@@ -82,6 +83,22 @@ class _PettiMainTabsScreenState extends State<PettiMainTabsScreen> {
       final auth = Provider.of<AuthProvider>(context, listen: false);
       Provider.of<SubscriptionProvider>(context, listen: false)
           .initialize(uid: auth.currentUser?.uid);
+
+      // 2026-07-22: request notification permission + register the FCM
+      // token here, on the post-login root, instead of ONLY inside the
+      // Zona Segura wizard. The wizard-only prompt (fcm_service.dart) left
+      // a real gap: any user who never completes home-zone setup — a
+      // pre-provisioned account, a device that fails the wizard, or anyone
+      // who just skips it — was never prompted, so iOS never registered
+      // their APNs token and geofence-exit / low-battery alerts silently
+      // never reached them. requestPermissionAndRegister() is idempotent:
+      // it re-registers the token for already-authorized users (keeping the
+      // stored token fresh after a reinstall / account switch) and prompts
+      // exactly once for notDetermined users; iOS won't re-prompt a prior
+      // denial. The Zona Segura call stays as the contextual prompt for
+      // users who reach it before this fires.
+      Provider.of<FCMService>(context, listen: false)
+          .requestPermissionAndRegister();
     });
   }
 
