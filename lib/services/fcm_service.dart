@@ -168,7 +168,41 @@ class FCMService {
   ///
   /// Both writes are best-effort; one failing doesn't block the other.
   Future<void> _bindToken() async {
-    final token = await _messaging.getToken();
+    // iOS ONLY: getToken() resolves the FCM token by exchanging the APNs
+    // device token. If getToken() is called before iOS has delivered that
+    // APNs token, it either returns null OR hangs indefinitely "waiting
+    // for APN registration" (documented iOS-release incident, 2026-05-06;
+    // see auth_provider.signInWithEmail). When that happens the token is
+    // never persisted, so push-service can't fan out geofence/battery
+    // alerts to the device — the exact "sent successfully but nothing
+    // arrives" failure. Fix: poll getAPNSToken() until iOS hands us the
+    // APNs token (bounded ~10s), THEN fetch the FCM token, and cap
+    // getToken() with a timeout so it can never hang the caller. If the
+    // APNs token still isn't ready, onTokenRefresh below re-persists once
+    // it arrives.
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      for (var i = 0; i < 10; i++) {
+        try {
+          final apns = await _messaging
+              .getAPNSToken()
+              .timeout(const Duration(seconds: 2));
+          if (apns != null) break;
+        } catch (_) {
+          // getAPNSToken can throw/timeout mid-registration; keep polling.
+        }
+        await Future.delayed(const Duration(seconds: 1));
+      }
+    }
+
+    String? token;
+    try {
+      token = await _messaging.getToken().timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      debugPrint('FCM: getToken timed out (APNs not ready) — '
+          'will register on the next onTokenRefresh');
+    } catch (e) {
+      debugPrint('FCM: getToken failed: $e');
+    }
     if (token != null) {
       debugPrint('FCM Token: $token');
       await _persistToken(token);
