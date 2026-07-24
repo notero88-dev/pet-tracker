@@ -291,21 +291,27 @@ class _HomeZoneSetupWizardState extends State<HomeZoneSetupWizard> {
       if (!mounted) return;
       if (outcome is Mode8WizardSuccess) {
         _queuedForWake = false;
-        AmplitudeService.instance.track('Home Zone Configured', properties: {
-          'device_imei': widget.device.uniqueId,
-          'radius_meters': _radiusMeters,
-          'queued': false,
-        });
+        AmplitudeService.instance.track(
+          'Home Zone Configured',
+          properties: {
+            'device_imei': widget.device.uniqueId,
+            'radius_meters': _radiusMeters,
+            'queued': false,
+          },
+        );
         _goto(_Step.success);
       } else if (outcome is Mode8WizardQueued) {
         // Device offline / asleep — runner queued the commands.
         // Success screen shows a slightly different message.
         _queuedForWake = true;
-        AmplitudeService.instance.track('Home Zone Configured', properties: {
-          'device_imei': widget.device.uniqueId,
-          'radius_meters': _radiusMeters,
-          'queued': true,
-        });
+        AmplitudeService.instance.track(
+          'Home Zone Configured',
+          properties: {
+            'device_imei': widget.device.uniqueId,
+            'radius_meters': _radiusMeters,
+            'queued': true,
+          },
+        );
         _goto(_Step.success);
       } else if (outcome is Mode8WizardError) {
         setState(() {
@@ -455,66 +461,82 @@ class _IntroStep extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const ZonaCasaIntroIllustration(),
-            const SizedBox(height: 22),
-            const Text(
-              'Activa el modo\nZona de casa',
-              style: TextStyle(
-                fontFamily: 'Space Grotesk',
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                color: PettiColors.midnight,
-                letterSpacing: -0.56, // -0.02em × 28
-                height: 1.05,
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'Cuando tu mascota esté en casa, el tracker reconocerá tu red '
-              'Wi-Fi y entrará en bajo consumo. Empieza a rastrear de nuevo '
-              'en cuanto salga.',
-              style: TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 14.5,
-                color: PettiColors.fg,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 18),
-            _BatteryDeltaRow(),
-            const SizedBox(height: 16),
-            _PermissionPreviewBanner(),
-            const Spacer(),
-            _CtaButton(
-              label: 'Empezar',
-              icon: Icons.home_outlined,
-              onPressed: onNext,
-            ),
-            const SizedBox(height: 8),
-            // Skip option — required so users (and Apple reviewers) who
-            // aren't currently at home can finish onboarding without
-            // being trapped. They can complete this later from Cuenta.
-            TextButton(
-              onPressed: onSkip,
-              style: TextButton.styleFrom(
-                foregroundColor: PettiColors.fg,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: const Text(
-                'Configurar después',
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w600,
+      // The intro content (illustration + copy + battery card + permission
+      // banner + CTA) can exceed the viewport on shorter Android screens or
+      // with a large system font scale. A bare Column + Spacer cannot scroll,
+      // which stranded the "Empezar" button off-screen with no way to reach it
+      // (Android user report, 2026-07-24). Wrap in a scroll view with a
+      // min-height + IntrinsicHeight so the Spacer still pins the CTA to the
+      // bottom when there is room, but the whole step scrolls when there isn't.
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const ZonaCasaIntroIllustration(),
+                    const SizedBox(height: 22),
+                    const Text(
+                      'Activa el modo\nZona de casa',
+                      style: TextStyle(
+                        fontFamily: 'Space Grotesk',
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
+                        color: PettiColors.midnight,
+                        letterSpacing: -0.56, // -0.02em × 28
+                        height: 1.05,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Cuando tu mascota esté en casa, el tracker reconocerá tu red '
+                      'Wi-Fi y entrará en bajo consumo. Empieza a rastrear de nuevo '
+                      'en cuanto salga.',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 14.5,
+                        color: PettiColors.fg,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    _BatteryDeltaRow(),
+                    const SizedBox(height: 16),
+                    _PermissionPreviewBanner(),
+                    const Spacer(),
+                    _CtaButton(
+                      label: 'Empezar',
+                      icon: Icons.home_outlined,
+                      onPressed: onNext,
+                    ),
+                    const SizedBox(height: 8),
+                    // Skip option — required so users (and Apple reviewers) who
+                    // aren't currently at home can finish onboarding without
+                    // being trapped. They can complete this later from Cuenta.
+                    TextButton(
+                      onPressed: onSkip,
+                      style: TextButton.styleFrom(
+                        foregroundColor: PettiColors.fg,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text(
+                        'Configurar después',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -536,11 +558,7 @@ class _BatteryDeltaRow extends StatelessWidget {
           Expanded(
             child: _BatteryCell(label: 'AHORA', value: '~3 días', muted: true),
           ),
-          const Icon(
-            Icons.chevron_right,
-            size: 16,
-            color: PettiColors.trail,
-          ),
+          const Icon(Icons.chevron_right, size: 16, color: PettiColors.trail),
           Expanded(
             child: _BatteryCell(
               label: 'CON ZONA DE CASA',
@@ -883,9 +901,7 @@ class _LocatingStepState extends State<_LocatingStep> {
       final bssid = results[1] as String?;
       final geo = results[2] as ({String line1, String line2})?;
 
-      if (bssid == null ||
-          bssid == '02:00:00:00:00:00' ||
-          ssidRaw == null) {
+      if (bssid == null || bssid == '02:00:00:00:00:00' || ssidRaw == null) {
         widget.onScanError(
           'No pudimos leer tu red Wi-Fi. Asegúrate de estar conectado a tu '
           'red de casa y vuelve a intentar.',
@@ -908,7 +924,8 @@ class _LocatingStepState extends State<_LocatingStep> {
         _resolved = true;
         _addressLine1 = geo?.line1 ?? 'Casa encontrada';
         _addressLine2 =
-            geo?.line2 ?? '${fix.latitude!.toStringAsFixed(5)}, '
+            geo?.line2 ??
+            '${fix.latitude!.toStringAsFixed(5)}, '
                 '${fix.longitude!.toStringAsFixed(5)}';
         _accuracyLabel = fix.accuracy != null
             ? '±${fix.accuracy!.toStringAsFixed(0)} m'
@@ -947,9 +964,7 @@ class _LocatingStepState extends State<_LocatingStep> {
         p.subLocality,
         p.locality,
       ].whereType<String>().where((s) => s.isNotEmpty).join(' · ');
-      final line2 = neighborhood.isNotEmpty
-          ? neighborhood
-          : (p.country ?? '');
+      final line2 = neighborhood.isNotEmpty ? neighborhood : (p.country ?? '');
       return (line1: line1, line2: line2);
     } catch (_) {
       return null;
@@ -1032,8 +1047,7 @@ class _PulsePin extends StatefulWidget {
   State<_PulsePin> createState() => _PulsePinState();
 }
 
-class _PulsePinState extends State<_PulsePin>
-    with TickerProviderStateMixin {
+class _PulsePinState extends State<_PulsePin> with TickerProviderStateMixin {
   late final AnimationController _ctl = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1600),
@@ -1141,11 +1155,7 @@ class _AddressChip extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.location_on,
-            size: 16,
-            color: PettiColors.marigold,
-          ),
+          const Icon(Icons.location_on, size: 16, color: PettiColors.marigold),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -1426,12 +1436,10 @@ class _ConnectedPill extends StatefulWidget {
 
 class _ConnectedPillState extends State<_ConnectedPill>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctl =
-      AnimationController(
-          vsync: this,
-          duration: const Duration(milliseconds: 1800),
-        )
-        ..repeat();
+  late final AnimationController _ctl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  )..repeat();
 
   @override
   void dispose() {
@@ -1756,10 +1764,8 @@ class _DeniedStep extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 ..._instructions.asMap().entries.map(
-                  (entry) => _InstructionStep(
-                    index: entry.key + 1,
-                    text: entry.value,
-                  ),
+                  (entry) =>
+                      _InstructionStep(index: entry.key + 1, text: entry.value),
                 ),
               ],
             ),
