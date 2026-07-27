@@ -819,65 +819,14 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
             child: SafeArea(child: _buildHeader()),
           ),
 
-          // "Reconectando…" pill — shown only when the Traccar
-          // WebSocket is in the reconnecting state. Previously the
-          // socket could die silently (Wi-Fi handoff, iOS suspend,
-          // Traccar restart) and the map would degrade to the slow
-          // REST poll with zero UI feedback; the user assumed live
-          // was still working. Listens to TraccarProvider via
-          // Consumer to avoid rebuilding the whole screen on
-          // unrelated state changes.
-          Positioned(
-            top: kToolbarHeight + 12,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              top: false,
-              child: Center(
-                child: Consumer<TraccarProvider>(
-                  builder: (context, traccar, _) {
-                    if (traccar.connectionStatus !=
-                        TraccarConnectionStatus.reconnecting) {
-                      return const SizedBox.shrink();
-                    }
-                    return Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: PettiSpacing.s3,
-                        vertical: PettiSpacing.s2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: PettiColors.midnight.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation(
-                                PettiColors.cloud,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: PettiSpacing.s2),
-                          Text(
-                            'Reconectando…',
-                            style: PettiText.body().copyWith(
-                              color: PettiColors.cloud,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
+          // "Reconectando…" pill REMOVED 2026-07-27 (founder request).
+          // It fired on every routine WebSocket blip (Wi-Fi handoff, iOS
+          // suspend), overlapped the header controls, and read as "the
+          // collar is failing" — pure anxiety with no action the user
+          // could take. The socket still auto-reconnects and the map
+          // degrades to REST polling silently; TraccarProvider's
+          // connectionStatus remains available if we ever want a subtler
+          // indicator.
 
           // Home-fallback banner — explains that the map is centered on
           // the user's house (not a live device fix) while the collar
@@ -1180,7 +1129,9 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   // gray screen because the new route built, errored, and
                   // popped to a blank surface. Position.batteryLevel is the
                   // safe getter — it does `(num).toInt()` and handles nulls.
-                  batteryPercent: _currentPosition?.batteryLevel ?? 80,
+                  // 2026-07-27: dropped the `?? 80` fake fallback — null now
+                  // hides the badge instead of inventing a percentage.
+                  batteryPercent: _currentPosition?.batteryLevel,
                 ),
               ),
             ),

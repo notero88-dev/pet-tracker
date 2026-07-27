@@ -37,6 +37,7 @@ import '../../services/firestore_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/petti_theme.dart';
 import '../device/home_zone_setup_wizard.dart';
+import '../geofence/geofence_list_screen.dart';
 import '../notifications/notification_settings_screen.dart';
 import '../profile/pet_profile_screen.dart';
 import '../profile/user_profile_screen.dart';
@@ -64,6 +65,18 @@ class CuentaTab extends StatelessWidget {
               SliverToBoxAdapter(
                 child: _ZonaDeCasaHero(device: devices.isNotEmpty ? devices.first : null),
               ),
+              // Zona segura entry — founder request 2026-07-27: the only
+              // path to safe zones was the shield icon inside the pet
+              // detail header, which users didn't discover. This gives
+              // it a first-class entry right under Zona de casa.
+              if (devices.isNotEmpty) ...[
+                const SliverToBoxAdapter(
+                  child: _SectionHeader('Zona segura', topPad: 24),
+                ),
+                SliverToBoxAdapter(
+                  child: _ZonaSeguraEntryCard(device: devices.first),
+                ),
+              ],
               const SliverToBoxAdapter(
                 child: _SectionHeader('Mascotas y dispositivos', topPad: 24),
               ),
@@ -820,6 +833,48 @@ class _SoporteCard extends StatelessWidget {
                 AppConstants.whatsAppSupportLink('Necesito ayuda con mi app My Besti').toString(),
               ),
               external: true,
+              isLast: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Zona segura — single row into the safe-zones list (map circles with
+// entry/exit alerts). Lives right under the Zona de casa hero so the two
+// sibling features are discoverable side by side with their distinct
+// names (casa = battery, segura = alerts).
+class _ZonaSeguraEntryCard extends StatelessWidget {
+  final Device device;
+  const _ZonaSeguraEntryCard({required this.device});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: PettiColors.borderLight),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        child: Column(
+          children: [
+            _RowItem(
+              icon: Icons.shield_outlined,
+              iconColor: PettiColors.midnight,
+              label: 'Zonas seguras',
+              sub: 'Hasta 3 zonas con alerta cuando entra o sale',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GeofenceListScreen(device: device),
+                ),
+              ),
+              chevron: true,
               isLast: true,
             ),
           ],

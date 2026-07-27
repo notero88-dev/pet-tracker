@@ -19,9 +19,12 @@ class A4PairedScreen extends StatelessWidget {
   /// Firmware version, e.g. "2.4.1".
   final String firmwareVersion;
 
-  /// Current device battery level, 0..100. Default 94 matches the
-  /// design's reference value.
-  final int batteryPercent;
+  /// Current device battery level, 0..100, or null when unknown.
+  /// Was `= 94` (the design mockup's reference value) — but at pairing
+  /// time we have no real reading yet, and showing a made-up 94% right
+  /// before the collar reports its true (possibly low) level confused
+  /// users (founder report 2026-07-27). Null hides the stat entirely.
+  final int? batteryPercent;
 
   /// "Continuar" → caller advances into A5 (GPS fix flow).
   final VoidCallback onContinue;
@@ -30,7 +33,7 @@ class A4PairedScreen extends StatelessWidget {
     super.key,
     required this.identifier,
     this.firmwareVersion = '2.4.1',
-    this.batteryPercent = 94,
+    this.batteryPercent,
     required this.onContinue,
   });
 
@@ -89,13 +92,15 @@ class A4PairedScreen extends StatelessWidget {
                       Expanded(
                         child: _StatCard(label: 'Hardware', value: 'OK'),
                       ),
-                      const SizedBox(width: PettiSpacing.s2),
-                      Expanded(
-                        child: _StatCard(
-                          label: 'Batería',
-                          value: '$batteryPercent%',
+                      if (batteryPercent != null) ...[
+                        const SizedBox(width: PettiSpacing.s2),
+                        Expanded(
+                          child: _StatCard(
+                            label: 'Batería',
+                            value: '$batteryPercent%',
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ],
