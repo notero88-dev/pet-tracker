@@ -333,7 +333,7 @@ class Mode8ConfigurationController {
     switch (intent.step) {
       case 'scan': return 'No pudimos leer las redes WiFi de tu casa';
       case 'ap':   return 'No pudimos memorizar tu casa';
-      case 'geo':  return 'No pudimos dibujar tu zona segura';
+      case 'geo':  return 'No pudimos dibujar tu zona de casa';
       case 'mode': return 'No pudimos activar el ahorro de batería';
       default:     return 'No pudimos terminar la configuración';
     }

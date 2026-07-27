@@ -30,7 +30,7 @@ class A5FirstFixScreen extends StatefulWidget {
   /// Device battery percentage.
   final int batteryPercent;
 
-  /// "Definir zona segura" → caller advances into A6.1.
+  /// "Definir zona de casa" → caller advances into A6.1.
   final VoidCallback onDefineSafeZone;
 
   const A5FirstFixScreen({
@@ -134,7 +134,7 @@ class _A5FirstFixScreenState extends State<A5FirstFixScreen> {
             right: 0,
             bottom: 0,
             child: PettiCtaDock(
-              primaryLabel: 'Definir zona segura',
+              primaryLabel: 'Definir zona de casa',
               onPrimary: widget.onDefineSafeZone,
             ),
           ),

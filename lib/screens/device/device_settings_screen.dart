@@ -17,9 +17,9 @@ import '../../services/device_commands_api.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/petti_primitives.dart';
 import '../../widgets/petti/mode_picker.dart';
-import '../../widgets/petti/zona_segura_card.dart';
+import '../../widgets/petti/zona_casa_card.dart';
 import '../../widgets/petti/reboot_dialog.dart';
-import 'zona_segura_wizard.dart';
+import 'home_zone_setup_wizard.dart';
 
 class DeviceSettingsScreen extends StatefulWidget {
   final Device device;
@@ -120,18 +120,23 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
     }
   }
 
-  Future<void> _openZonaWizard() async {
-    final result = await Navigator.of(context).push<bool>(
+  Future<void> _openZonaCasaWizard() async {
+    // Settings now opens the phone-side WiFi/MODE 8 wizard (the same one
+    // Cuenta and onboarding use). The old device-side DEF,R wizard was
+    // retired 2026-07-27 — its scan repeatedly failed on real hardware
+    // (see KANBAN 2026-05-11 pivot to phone-side; only the phone-side path
+    // has a verified end-to-end).
+    await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => ZonaSeguraWizardScreen(
+        builder: (_) => HomeZoneSetupWizard(
           device: widget.device,
           petName: widget.petName,
-          api: _api,
+          isOnboarding: false,
         ),
       ),
     );
-    if (result == true && mounted) {
-      // The wizard already shows its own success screen; no toast needed here.
+    if (mounted) {
+      // The wizard shows its own success screen; refresh the card on return.
       setState(() {});
     }
   }
@@ -188,8 +193,8 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                 // on the controls that matter day-to-day. Underlying
                 // _modeCard() and _dangerZone() methods are left in the
                 // file for now (dead code) in case we re-introduce.
-                const PettiSectionHeader('Zona segura'),
-                _zonaSeguraCard(),
+                const PettiSectionHeader('Zona de casa'),
+                _zonaCasaCard(),
                 const PettiSectionHeader('Información del dispositivo'),
                 _deviceInfoCard(),
               ],
@@ -405,21 +410,21 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
     );
   }
 
-  // --- Zona Segura card ---
+  // --- Zona de casa card (battery / home mode) ---
 
-  Widget _zonaSeguraCard() {
+  Widget _zonaCasaCard() {
     return PettiCard(
       padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(PettiRadii.md),
         child: widget.homeZoneConfigured
-            ? PettiZonaSeguraConfigured(
+            ? PettiZonaCasaConfigured(
                 radiusLabel: '100 m',
                 networkCount: 3,
                 configuredOn: '3 abr',
-                onUpdate: _openZonaWizard,
+                onUpdate: _openZonaCasaWizard,
               )
-            : PettiZonaSeguraEmpty(onConfigure: _openZonaWizard),
+            : PettiZonaCasaEmpty(onConfigure: _openZonaCasaWizard),
       ),
     );
   }

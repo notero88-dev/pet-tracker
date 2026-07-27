@@ -1,4 +1,4 @@
-// Petti onboarding — Zona segura wizard timeline (A6.3).
+// Petti onboarding — Zona de casa wizard timeline (A6.3).
 //
 // The "hero" waiting moment of the home-zone setup. Renders a vertical
 // timeline with one entry per backend step, animating each one through
@@ -73,7 +73,7 @@ class PettiWizardTimeline extends StatelessWidget {
       ),
       PettiTimelineEntry(
         label: 'Dibujando el círculo en el GPS',
-        detail: 'geocerca aplicada al dispositivo',
+        detail: 'zona de casa aplicada al dispositivo',
         status: statusFor(2),
       ),
       PettiTimelineEntry(

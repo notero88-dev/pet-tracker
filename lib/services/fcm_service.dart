@@ -59,7 +59,7 @@ class FCMService {
 
   /// Wire up FCM message handlers + cold-start routing. Does NOT prompt the
   /// user for notification permission — that's deferred to
-  /// [requestPermissionAndRegister], called from the Zona Segura wizard's
+  /// [requestPermissionAndRegister], called from the Zona de casa wizard's
   /// success step where the user has narrative context for what they're
   /// allowing.
   ///
@@ -94,7 +94,7 @@ class FCMService {
       } else {
         debugPrint(
             'FCM: permission not yet requested or denied — deferring token registration. '
-            'Call FCMService.requestPermissionAndRegister() after Zona Segura succeeds.');
+            'Call FCMService.requestPermissionAndRegister() after Zona de casa succeeds.');
       }
 
       // Cold-start: the user tapped a notification while the app was
@@ -112,7 +112,7 @@ class FCMService {
   }
 
   /// Prompt the user for notification permission and register the FCM
-  /// token. Call this from the Zona Segura wizard's success step (or
+  /// token. Call this from the Zona de casa wizard's success step (or
   /// anywhere else the user has just opted into a feature that needs
   /// alerts).
   ///

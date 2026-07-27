@@ -88,7 +88,7 @@ class A6DoneScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: PettiSpacing.s2),
                       Text(
-                        'ZONA SEGURA ACTIVA',
+                        'ZONA DE CASA ACTIVA',
                         style: PettiText.meta().copyWith(
                           color: PettiColors.sabana,
                           fontSize: 11,

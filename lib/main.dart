@@ -213,7 +213,7 @@ class _PetTrackAppState extends State<PetTrackApp> with WidgetsBindingObserver {
         ChangeNotifierProvider.value(value: _notificationProvider),
         // FCMService isn't a ChangeNotifier (no rebuild-driving state) but
         // we expose it via Provider so screens can call its methods —
-        // specifically the Zona Segura wizard calls
+        // specifically the Zona de casa wizard calls
         // requestPermissionAndRegister() after success, instead of
         // permission being prompted at app launch. See fcm_service.dart.
         Provider<FCMService>.value(value: _fcm),
