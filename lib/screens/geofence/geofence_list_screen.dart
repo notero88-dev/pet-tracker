@@ -234,6 +234,15 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
                   ],
                 ),
               ),
+              // Visible edit affordance (founder request 2026-07-27):
+              // editing was only discoverable via the row-tap options
+              // sheet; the pencil jumps straight into edit.
+              IconButton(
+                icon: const Icon(Icons.edit_outlined),
+                color: PettiColors.fgDim,
+                tooltip: 'Editar zona',
+                onPressed: () => _editGeofence(g),
+              ),
               const Icon(
                 Icons.chevron_right,
                 color: PettiColors.fgFaint,
