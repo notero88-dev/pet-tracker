@@ -428,7 +428,10 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                 configuredOn: '3 abr',
                 onUpdate: _openZonaCasaWizard,
               )
-            : PettiZonaCasaEmpty(onConfigure: _openZonaCasaWizard),
+            : PettiZonaCasaEmpty(
+                onConfigure: _openZonaCasaWizard,
+                petName: widget.petName,
+              ),
       ),
     );
   }

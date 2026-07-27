@@ -15,7 +15,17 @@ import 'petti_primitives.dart';
 
 class PettiZonaCasaEmpty extends StatelessWidget {
   final VoidCallback onConfigure;
-  const PettiZonaCasaEmpty({super.key, required this.onConfigure});
+
+  /// The pet's real name. The card copy used to hardcode the design
+  /// mockup's "Canela", which shipped to production and showed for every
+  /// pet regardless of its name (founder report 2026-07-27, pet "Rocky").
+  final String petName;
+
+  const PettiZonaCasaEmpty({
+    super.key,
+    required this.onConfigure,
+    required this.petName,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +60,7 @@ class PettiZonaCasaEmpty extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             'Tu dispositivo entra en modo bajo consumo cuando detecta el WiFi '
-            'de tu casa — y vuelve a rastrear cuando Canela sale.',
+            'de tu casa — y vuelve a rastrear cuando $petName sale.',
             style: PettiText.bodySm(),
           ),
           const SizedBox(height: PettiSpacing.s3 + 2),
