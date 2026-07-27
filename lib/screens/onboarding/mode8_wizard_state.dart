@@ -8,7 +8,7 @@
 /// The matching backend sequence is documented at
 /// docs/superpowers/plans/2026-04-29-mode8-flutter-wizard.md
 enum Mode8WizardState {
-  /// Initial state, before user taps "Crear zona segura".
+  /// Initial state, before user taps "Configurar zona de casa".
   idle,
 
   /// Calling /devices/:imei/scan — UI shows "Detectando redes WiFi…".
@@ -17,7 +17,7 @@ enum Mode8WizardState {
   /// Calling /devices/:imei/access-points — UI shows "Memorizando tu casa…".
   settingMacs,
 
-  /// Calling /devices/:imei/geo-fence — UI shows "Dibujando tu zona segura…".
+  /// Calling /devices/:imei/geo-fence — UI shows "Dibujando tu zona de casa…".
   settingHomeZone,
 
   /// Calling /devices/:imei/mode (type=home) — UI shows
@@ -48,7 +48,7 @@ extension Mode8WizardStateLabel on Mode8WizardState {
       case Mode8WizardState.settingMacs:
         return 'Memorizando tu casa…';
       case Mode8WizardState.settingHomeZone:
-        return 'Dibujando tu zona segura…';
+        return 'Dibujando tu zona de casa…';
       case Mode8WizardState.enteringMode8:
         return 'Activando ahorro de batería…';
       case Mode8WizardState.creatingTraccarGeofence:

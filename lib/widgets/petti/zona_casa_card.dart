@@ -1,5 +1,9 @@
-// Zona Segura section — two states: empty (prompt to configure) and
+// Zona de casa section — two states: empty (prompt to configure) and
 // configured (mini map preview + radius/WiFi/date stats + Update button).
+//
+// This is the battery / home-mode (MODE 8) card. It is NOT the map
+// geofence ("Zona segura") — that lives under lib/screens/geofence/.
+// Renamed 2026-07-27 to stop overloading the "zona segura" name.
 
 import 'package:flutter/material.dart';
 import '../../utils/petti_theme.dart';
@@ -9,9 +13,9 @@ import 'petti_primitives.dart';
 // Empty state — when no Home Zone is configured yet.
 // -----------------------------------------------------------------------------
 
-class PettiZonaSeguraEmpty extends StatelessWidget {
+class PettiZonaCasaEmpty extends StatelessWidget {
   final VoidCallback onConfigure;
-  const PettiZonaSeguraEmpty({super.key, required this.onConfigure});
+  const PettiZonaCasaEmpty({super.key, required this.onConfigure});
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +44,7 @@ class PettiZonaSeguraEmpty extends StatelessWidget {
           ),
           const SizedBox(height: PettiSpacing.s3 + 2),
           Text(
-            'Configura la zona segura',
+            'Configura la zona de casa',
             style: PettiText.h4(),
           ),
           const SizedBox(height: 6),
@@ -51,7 +55,7 @@ class PettiZonaSeguraEmpty extends StatelessWidget {
           ),
           const SizedBox(height: PettiSpacing.s3 + 2),
           PettiCta(
-            label: 'Configurar zona segura',
+            label: 'Configurar zona de casa',
             onPressed: onConfigure,
             icon: const Icon(Icons.home_rounded),
           ),
@@ -124,13 +128,13 @@ class _HousePainter extends CustomPainter {
 // Configured state — mini map preview + stats.
 // -----------------------------------------------------------------------------
 
-class PettiZonaSeguraConfigured extends StatelessWidget {
+class PettiZonaCasaConfigured extends StatelessWidget {
   final String radiusLabel;
   final int networkCount;
   final String configuredOn;
   final VoidCallback onUpdate;
 
-  const PettiZonaSeguraConfigured({
+  const PettiZonaCasaConfigured({
     super.key,
     required this.radiusLabel,
     required this.networkCount,

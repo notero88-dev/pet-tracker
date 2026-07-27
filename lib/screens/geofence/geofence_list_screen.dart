@@ -4,9 +4,10 @@
 // under the 3-zone limit. Tap a row → bottom sheet with View / Edit /
 // Delete options.
 //
-// Uses Petti tokens throughout. The Zona Segura wizard creates one of
-// these as part of onboarding (commit 4c07131); this screen is for
-// managing additional zones afterward (e.g., "Trabajo", "Veterinario").
+// Uses Petti tokens throughout. The Zona de casa (home mode) wizard
+// creates one of these as a mirror during onboarding (commit 4c07131);
+// this screen is for managing the map safe zones ("Zona segura")
+// afterward (e.g., "Trabajo", "Veterinario").
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
