@@ -52,30 +52,70 @@ class _SaludTabState extends State<SaludTab> {
   String? _selectedPetId;
   _SaludRange _range = _SaludRange.dia;
 
+  TraccarProvider? _traccar;
+  bool _loadInFlight = false;
+  // True once we've reloaded after the Traccar session became ready, so we
+  // only do that one catch-up reload (avoids a reload storm on every
+  // WebSocket position notification).
+  bool _reloadedAfterReady = false;
+
   @override
   void initState() {
     super.initState();
+    _traccar = Provider.of<TraccarProvider>(context, listen: false)
+      ..addListener(_onTraccarChanged);
     _loadPets();
   }
 
+  @override
+  void dispose() {
+    _traccar?.removeListener(_onTraccarChanged);
+    super.dispose();
+  }
+
+  // The 4 root tabs live in an IndexedStack, so this tab is built (and its
+  // initState runs) eagerly on the post-login root — BEFORE
+  // PettiMainTabsScreen._initializeTraccar() has logged into Traccar. Our
+  // first _loadPets() therefore fires against an unauthenticated session:
+  // loadPositionHistory 401s, every pet falls back to the offline all-zeros
+  // entry, and the tab shows "0 pasos" + em-dashes forever because the load
+  // only ran once. (PetActivityScreen doesn't hit this because it's pushed
+  // later, by which point the session is warm.) Fix: reload exactly once the
+  // moment the session is ready, detected by `devices` becoming populated
+  // (refreshDevices only succeeds after login).
+  void _onTraccarChanged() {
+    if (_reloadedAfterReady || _loadInFlight) return;
+    if (_traccar?.devices.isNotEmpty ?? false) {
+      _reloadedAfterReady = true;
+      _traccar?.removeListener(_onTraccarChanged);
+      _loadPets();
+    }
+  }
+
   Future<void> _loadPets() async {
+    if (_loadInFlight) return;
+    _loadInFlight = true;
     try {
-      final traccar = Provider.of<TraccarProvider>(context, listen: false);
+      final traccar =
+          _traccar ?? Provider.of<TraccarProvider>(context, listen: false);
       final firestore = FirestoreService();
       final pets =
           await realActivitiesForUser(traccar: traccar, firestore: firestore);
       if (!mounted) return;
       setState(() {
         _pets = pets;
-        _selectedPetId = pets.isNotEmpty ? pets.first.petId : null;
+        // Preserve the user's pet selection across the catch-up reload.
+        _selectedPetId ??= pets.isNotEmpty ? pets.first.petId : null;
         _loading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _pets = [];
+        _pets ??= [];
         _loading = false;
       });
+    } finally {
+      _loadInFlight = false;
     }
   }
 
