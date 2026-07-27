@@ -39,7 +39,10 @@ class DeviceSettingsScreen extends StatefulWidget {
   final DateTime? lastSeen;
 
   /// 0–100, bucketed to 20/40/60/80/100 by the time we store it.
-  final int batteryPercent;
+  /// Battery 0..100, or null when we have no real reading yet (device
+  /// never reported / no cached position). Null hides the badge — better
+  /// no number than a made-up one (founder report 2026-07-27).
+  final int? batteryPercent;
 
   final DeviceCommandsApi? api;
 
@@ -51,7 +54,7 @@ class DeviceSettingsScreen extends StatefulWidget {
     this.homeZoneConfigured = false,
     this.isOnline = true,
     this.lastSeen,
-    this.batteryPercent = 80,
+    this.batteryPercent,
     this.api,
   });
 
@@ -296,7 +299,8 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                     ? 'Desconectado $lastSeenText'
                     : 'En línea · el pulso activo',
               ),
-              PettiBatteryBadge(percentBucket: widget.batteryPercent),
+              if (widget.batteryPercent != null)
+                PettiBatteryBadge(percentBucket: widget.batteryPercent!),
             ],
           ),
         ],
