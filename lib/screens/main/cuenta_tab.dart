@@ -37,6 +37,7 @@ import '../../services/firestore_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/petti_theme.dart';
 import '../device/home_zone_setup_wizard.dart';
+import '../notifications/notification_settings_screen.dart';
 import '../profile/pet_profile_screen.dart';
 import '../profile/user_profile_screen.dart';
 import 'petti_main_tabs_screen.dart';
@@ -71,6 +72,10 @@ class CuentaTab extends StatelessWidget {
                 child: _SectionHeader('Suscripción', topPad: 24),
               ),
               const SliverToBoxAdapter(child: _SubscriptionCard()),
+              const SliverToBoxAdapter(
+                child: _SectionHeader('Notificaciones', topPad: 24),
+              ),
+              const SliverToBoxAdapter(child: _NotificacionesCard()),
               const SliverToBoxAdapter(child: _SectionHeader('Soporte')),
               const SliverToBoxAdapter(child: _SoporteCard()),
               const SliverToBoxAdapter(child: _SectionHeader('Legal')),
@@ -815,6 +820,47 @@ class _SoporteCard extends StatelessWidget {
                 AppConstants.whatsAppSupportLink('Necesito ayuda con mi app My Besti').toString(),
               ),
               external: true,
+              isLast: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Notificaciones — single row into the notification-settings screen.
+// Added 2026-07-27: that screen (Zona Segura enter/exit toggles, battery,
+// offline, etc.) was previously only reachable from the dead HomeScreen,
+// so it was unreachable in the live tab UI. This wires it into Cuenta.
+class _NotificacionesCard extends StatelessWidget {
+  const _NotificacionesCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: PettiColors.borderLight),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        child: Column(
+          children: [
+            _RowItem(
+              icon: Icons.notifications_none_rounded,
+              iconColor: PettiColors.midnight,
+              label: 'Alertas y notificaciones',
+              sub: 'Zona segura, batería, sin señal y más',
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const NotificationSettingsScreen(),
+                ),
+              ),
+              chevron: true,
               isLast: true,
             ),
           ],
