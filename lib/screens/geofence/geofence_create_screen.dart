@@ -15,6 +15,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:location/location.dart' as loc;
 import 'package:provider/provider.dart';
 
 import '../../models/device.dart';
@@ -58,19 +59,71 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
       _radiusMeters = widget.editGeofence!.radius ?? 100.0;
     } else {
       _nameController = TextEditingController();
-      _loadDevicePosition();
+      _seedCenter();
     }
     if (_center != null) _updateOverlays();
   }
 
-  Future<void> _loadDevicePosition() async {
-    final traccar = Provider.of<TraccarProvider>(context, listen: false);
-    final position = traccar.getLastPosition(widget.device.requireTraccarId());
-    if (position != null && mounted) {
+  /// Seed the initial pin. Priority (founder request 2026-07-27):
+  ///   1. The PHONE's current location — the user is usually standing at
+  ///      the place they want to protect, and this also works for
+  ///      brand-new collars that have never reported.
+  ///   2. The collar's last known position (previous behavior).
+  ///   3. Bogotá city center — last resort so the map ALWAYS renders and
+  ///      the user can drag the pin manually. Before this fallback chain,
+  ///      a device with no position history left the screen on an
+  ///      infinite spinner with no way to place the zone.
+  /// The user then confirms by dragging the map (or leaving it as-is)
+  /// before saving — the seed is only a starting point.
+  Future<void> _seedCenter() async {
+    final phoneFix = await _tryPhoneLocation();
+    if (!mounted) return;
+    if (phoneFix != null) {
       setState(() {
-        _center = LatLng(position.latitude, position.longitude);
+        _center = phoneFix;
         _updateOverlays();
       });
+      return;
+    }
+
+    final traccar = Provider.of<TraccarProvider>(context, listen: false);
+    final position = traccar.getLastPosition(widget.device.requireTraccarId());
+    if (!mounted) return;
+    setState(() {
+      _center = position != null
+          ? LatLng(position.latitude, position.longitude)
+          : _bogotaFallback;
+      _updateOverlays();
+    });
+  }
+
+  /// Bogotá center — the app targets Colombia, so this puts first-run
+  /// users with no permission + no device history in familiar territory
+  /// instead of the Gulf of Guinea (0,0).
+  static const LatLng _bogotaFallback = LatLng(4.6533, -74.0837);
+
+  /// Phone GPS with the same permission dance the Zona de casa wizard
+  /// uses. Returns null on any denial/failure — callers fall through to
+  /// the next seed source. Bounded so a slow fix can't hold the map
+  /// hostage: worst case ~8s then we fall back.
+  Future<LatLng?> _tryPhoneLocation() async {
+    try {
+      final location = loc.Location();
+      var perm = await location.hasPermission();
+      if (perm == loc.PermissionStatus.denied) {
+        perm = await location.requestPermission();
+      }
+      if (perm != loc.PermissionStatus.granted &&
+          perm != loc.PermissionStatus.grantedLimited) {
+        return null;
+      }
+      if (!await location.serviceEnabled()) return null;
+      final fix =
+          await location.getLocation().timeout(const Duration(seconds: 8));
+      if (fix.latitude == null || fix.longitude == null) return null;
+      return LatLng(fix.latitude!, fix.longitude!);
+    } catch (_) {
+      return null;
     }
   }
 

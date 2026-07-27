@@ -15,6 +15,7 @@ import 'package:provider/provider.dart';
 import '../../models/device.dart';
 import '../../models/geofence.dart';
 import '../../providers/traccar_provider.dart';
+import '../../utils/constants.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/petti_primitives.dart';
 import 'geofence_create_screen.dart';
@@ -69,7 +70,8 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
           : _geofences.isEmpty
               ? _buildEmptyState()
               : _buildList(),
-      floatingActionButton: _geofences.length < 3 && !_isLoading
+      floatingActionButton:
+          _geofences.length < AppConstants.maxGeofencesPerPet && !_isLoading
           ? FloatingActionButton.extended(
               onPressed: _createGeofence,
               backgroundColor: PettiColors.marigold,
