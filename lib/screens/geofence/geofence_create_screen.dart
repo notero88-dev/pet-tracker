@@ -570,19 +570,28 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
 
     try {
+      // All writes go through the provisioning-api's atomic zone
+      // endpoint (Lote 1): success here means the zone is created,
+      // linked to the collar AND mirrored for alerting — or nothing
+      // changed at all.
+      final imei = widget.device.uniqueId;
       bool success;
       if (widget.editGeofence != null) {
         success = await traccar.updateGeofence(
+          imei: imei,
           geofenceId: widget.editGeofence!.id,
           name: _nameController.text.trim(),
-          area: _buildWKT(),
-          deviceId: widget.device.requireTraccarId(),
+          latitude: _shape == _ZoneShape.circle ? _center!.latitude : null,
+          longitude: _shape == _ZoneShape.circle ? _center!.longitude : null,
+          radiusMeters: _shape == _ZoneShape.circle ? _radiusMeters : null,
+          points:
+              _shape == _ZoneShape.polygon ? List.of(_polyPoints) : null,
         );
       } else if (_shape == _ZoneShape.polygon) {
         final geofenceId = await traccar.createPolygonGeofence(
           name: _nameController.text.trim(),
           points: List.of(_polyPoints),
-          deviceId: widget.device.requireTraccarId(),
+          imei: imei,
         );
         success = geofenceId != null;
       } else {
@@ -591,7 +600,7 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
           latitude: _center!.latitude,
           longitude: _center!.longitude,
           radiusMeters: _radiusMeters,
-          deviceId: widget.device.requireTraccarId(),
+          imei: imei,
         );
         success = geofenceId != null;
       }
@@ -635,17 +644,8 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
     }
   }
 
-  /// WKT for Traccar's geofence area. Formats:
-  ///   `CIRCLE (LAT LON, RADIUS_METERS)` — meters, not degrees, comma
-  ///       before the radius (see file header; fixed in commit 4c07131).
-  ///   `POLYGON ((LAT1 LON1, LAT2 LON2, ...))` — Traccar closes the ring
-  ///       itself; do NOT repeat the first point.
-  String _buildWKT() {
-    if (_shape == _ZoneShape.polygon) {
-      final coords =
-          _polyPoints.map((p) => '${p.latitude} ${p.longitude}').join(', ');
-      return 'POLYGON (($coords))';
-    }
-    return 'CIRCLE (${_center!.latitude} ${_center!.longitude}, $_radiusMeters)';
-  }
+  // NOTE: WKT building moved server-side (zonesService.buildWkt on the
+  // provisioning-api) as part of the atomic zone endpoint — the app no
+  // longer authors Traccar area strings. The parser side stays in
+  // models/geofence.dart with its round-trip test.
 }

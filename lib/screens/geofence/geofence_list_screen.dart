@@ -379,7 +379,10 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
 
   Future<void> _deleteGeofence(Geofence g) async {
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
-    final success = await traccar.deleteGeofence(g.id);
+    final success = await traccar.deleteGeofence(
+      imei: widget.device.uniqueId,
+      geofenceId: g.id,
+    );
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(

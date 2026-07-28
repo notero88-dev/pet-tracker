@@ -522,7 +522,7 @@ class _SetupGeofenceScreenState extends State<SetupGeofenceScreen> {
       latitude: _center.latitude,
       longitude: _center.longitude,
       radiusMeters: _radiusMeters,
-      deviceId: widget.device.requireTraccarId(),
+      imei: widget.device.uniqueId,
     );
     if (geofenceId == null) {
       final failure = WizardStepFailed(
