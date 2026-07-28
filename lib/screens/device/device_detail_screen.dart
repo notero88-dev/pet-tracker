@@ -123,6 +123,13 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   LatLng? _homeZoneCenter;
   double? _homeZoneRadiusMeters;
 
+  // Free-form (polygon) zone vertices, for membership + map-camera
+  // fallback. Before 2026-07-28 (Lote 2.3) a user whose ONLY zone was
+  // a drawn polygon never saw "En casa" (the haversine check only knew
+  // circles) and a collar with no fix left the map on an endless
+  // "Cargando ubicación…" (no camera fallback).
+  final List<List<LatLng>> _homeZonePolygons = [];
+
   Position? _currentPosition;
   List<Position> _historyPositions = [];
   Position? _selectedHistoryPosition;
@@ -278,7 +285,45 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
         ..addAll(polygons);
       _homeZoneCenter = firstCenter;
       _homeZoneRadiusMeters = firstRadius;
+      _homeZonePolygons
+        ..clear()
+        ..addAll([
+          for (final g in geofences)
+            if (g.type == GeofenceType.polygon &&
+                g.isActive &&
+                (g.polygonPoints?.length ?? 0) >= 3)
+              g.polygonPoints!,
+        ]);
     });
+  }
+
+  /// Ray-casting point-in-polygon. Standard even-odd rule on lat/lng —
+  /// fine at zone scale (hundreds of meters; Earth's curvature is
+  /// negligible and our zones never cross the antimeridian).
+  static bool _pointInPolygon(LatLng p, List<LatLng> poly) {
+    var inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      final a = poly[i];
+      final b = poly[j];
+      final intersects = ((a.longitude > p.longitude) !=
+              (b.longitude > p.longitude)) &&
+          (p.latitude <
+              (b.latitude - a.latitude) *
+                      (p.longitude - a.longitude) /
+                      (b.longitude - a.longitude) +
+                  a.latitude);
+      if (intersects) inside = !inside;
+    }
+    return inside;
+  }
+
+  static LatLng _polygonCentroid(List<LatLng> poly) {
+    var lat = 0.0, lng = 0.0;
+    for (final p in poly) {
+      lat += p.latitude;
+      lng += p.longitude;
+    }
+    return LatLng(lat / poly.length, lng / poly.length);
   }
 
   /// Haversine distance in meters between [lat1, lng1] and [lat2, lng2].
@@ -308,28 +353,44 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   LatLng? get _mapCameraTarget {
     final pos = _currentPosition;
     if (pos != null) return LatLng(pos.latitude, pos.longitude);
-    return _homeZoneCenter;
+    if (_homeZoneCenter != null) return _homeZoneCenter;
+    // Polygon-only accounts (Lote 2.3): center on the drawn zone
+    // instead of hanging on the spinner forever.
+    if (_homeZonePolygons.isNotEmpty) {
+      return _polygonCentroid(_homeZonePolygons.first);
+    }
+    return null;
   }
 
   /// True while we're showing the home-zone fallback because the device
   /// hasn't reported a real position yet. Drives the explanatory banner
   /// so the centered map doesn't get mistaken for a live device fix.
   bool get _showingHomeFallback =>
-      _currentPosition == null && _homeZoneCenter != null;
+      _currentPosition == null &&
+      (_homeZoneCenter != null || _homeZonePolygons.isNotEmpty);
 
-  /// True when the current position is inside the cached home zone.
-  /// Returns false when either piece of data isn't loaded yet, so the
-  /// UI conservatively shows the geocoded place name in those cases
-  /// instead of guessing.
+  /// True when the current position is inside ANY cached zone — circle
+  /// (haversine) or drawn polygon (ray casting, Lote 2.3). Returns
+  /// false when data isn't loaded yet, so the UI conservatively shows
+  /// the geocoded place name instead of guessing.
   bool get _isInHomeZone {
     final pos = _currentPosition;
+    if (pos == null) return false;
     final center = _homeZoneCenter;
     final radius = _homeZoneRadiusMeters;
-    if (pos == null || center == null || radius == null) return false;
-    return _haversineMeters(
-          pos.latitude, pos.longitude, center.latitude, center.longitude,
-        ) <=
-        radius;
+    if (center != null &&
+        radius != null &&
+        _haversineMeters(
+              pos.latitude, pos.longitude, center.latitude, center.longitude,
+            ) <=
+            radius) {
+      return true;
+    }
+    final point = LatLng(pos.latitude, pos.longitude);
+    for (final poly in _homeZonePolygons) {
+      if (_pointInPolygon(point, poly)) return true;
+    }
+    return false;
   }
 
   /// Kick off a reverse-geocode for [position]. Cache lives in

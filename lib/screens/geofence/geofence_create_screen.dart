@@ -144,8 +144,9 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
         return null;
       }
       if (!await location.serviceEnabled()) return null;
-      final fix =
-          await location.getLocation().timeout(const Duration(seconds: 8));
+      final fix = await location.getLocation().timeout(
+        const Duration(seconds: 8),
+      );
       if (fix.latitude == null || fix.longitude == null) return null;
       return LatLng(fix.latitude!, fix.longitude!);
     } catch (_) {
@@ -240,8 +241,7 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
                   circles: _circles,
                   markers: _markers,
                   polygons: _polygons,
-                  onMapCreated: (controller) =>
-                      _mapController = controller,
+                  onMapCreated: (controller) => _mapController = controller,
                   onTap: _onMapTap,
                   onCameraMove: (cam) {
                     if (_shape != _ZoneShape.circle) return;
@@ -276,7 +276,12 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
                     ),
                   ),
 
-                // Bottom sheet with form
+                // Bottom sheet with form. Scrollable + height-capped
+                // (Lote 2.4): on small phones with the keyboard open the
+                // fixed Column overflowed and stranded the save CTA below
+                // the fold — the same bug class Diana hit on the wizard
+                // intro. Capped at 70% of the viewport so some map always
+                // stays visible; the sheet scrolls internally.
                 Positioned(
                   left: 0,
                   right: 0,
@@ -284,6 +289,9 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
                   child: SafeArea(
                     top: false,
                     child: Container(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.7,
+                      ),
                       decoration: BoxDecoration(
                         color: PettiColors.cloud,
                         borderRadius: const BorderRadius.vertical(
@@ -297,234 +305,260 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
                         PettiSpacing.s5,
                         PettiSpacing.s4,
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Center(
-                            child: Container(
-                              width: 36,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: PettiColors.fog,
-                                borderRadius:
-                                    BorderRadius.circular(PettiRadii.pill),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: PettiSpacing.s4),
-
-                          TextField(
-                            controller: _nameController,
-                            decoration: const InputDecoration(
-                              labelText: 'Nombre de la zona *',
-                              hintText: 'Ej: Casa, Trabajo, Finca',
-                              prefixIcon:
-                                  Icon(Icons.location_on_outlined),
-                            ),
-                          ),
-                          const SizedBox(height: PettiSpacing.s4),
-
-                          // Shape selector: circle vs free-form drawing.
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ChoiceChip(
-                                  label: const Text('Círculo'),
-                                  avatar: const Icon(
-                                      Icons.radio_button_unchecked,
-                                      size: 16),
-                                  selected: _shape == _ZoneShape.circle,
-                                  selectedColor: PettiColors.marigoldSoft,
-                                  onSelected: (_) => setState(() {
-                                    _shape = _ZoneShape.circle;
-                                    _updateOverlays();
-                                  }),
-                                ),
-                              ),
-                              const SizedBox(width: PettiSpacing.s2),
-                              Expanded(
-                                child: ChoiceChip(
-                                  label: const Text('Dibujar'),
-                                  avatar: const Icon(Icons.edit_outlined,
-                                      size: 16),
-                                  selected: _shape == _ZoneShape.polygon,
-                                  selectedColor: PettiColors.marigoldSoft,
-                                  onSelected: (_) => setState(() {
-                                    _shape = _ZoneShape.polygon;
-                                    _updateOverlays();
-                                  }),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: PettiSpacing.s4),
-
-                          if (_shape == _ZoneShape.circle) ...[
-                            Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('RADIO', style: PettiText.meta()),
-                                Text(
-                                  _formatRadius(_radiusMeters),
-                                  style: PettiText.number(
-                                    size: 16,
-                                    weight: FontWeight.w700,
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Center(
+                              child: Container(
+                                width: 36,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: PettiColors.fog,
+                                  borderRadius: BorderRadius.circular(
+                                    PettiRadii.pill,
                                   ),
                                 ),
-                              ],
-                            ),
-                            SliderTheme(
-                              data: SliderTheme.of(context).copyWith(
-                                activeTrackColor: PettiColors.marigold,
-                                inactiveTrackColor: PettiColors.fog,
-                                thumbColor: PettiColors.marigold,
-                                overlayColor: PettiColors.marigold
-                                    .withValues(alpha: 0.2),
-                              ),
-                              child: Slider(
-                                value: _radiusMeters,
-                                min: 50,
-                                max: 1000,
-                                divisions: 95,
-                                label: _formatRadius(_radiusMeters),
-                                onChanged: (value) => setState(() {
-                                  _radiusMeters = value;
-                                  _updateOverlays();
-                                }),
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: PettiSpacing.s2),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('50 m',
-                                      style: PettiText.bodySm().copyWith(
-                                          color: PettiColors.fgDim)),
-                                  Text('1 km',
-                                      style: PettiText.bodySm().copyWith(
-                                          color: PettiColors.fgDim)),
-                                ],
                               ),
                             ),
                             const SizedBox(height: PettiSpacing.s4),
 
-                            // Drag-to-position hint — Sand surface, calm tone.
-                            Container(
-                              padding: const EdgeInsets.all(PettiSpacing.s3),
-                              decoration: BoxDecoration(
-                                color: PettiColors.sand,
-                                borderRadius:
-                                    BorderRadius.circular(PettiRadii.sm),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.touch_app_outlined,
-                                      size: 18, color: PettiColors.fgDim),
-                                  const SizedBox(width: PettiSpacing.s2),
-                                  Expanded(
-                                    child: Text(
-                                      'Arrastra el mapa para posicionar el centro',
-                                      style: PettiText.bodySm().copyWith(
-                                        color: PettiColors.fgDim,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                            TextField(
+                              controller: _nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Nombre de la zona *',
+                                hintText: 'Ej: Casa, Trabajo, Finca',
+                                prefixIcon: Icon(Icons.location_on_outlined),
                               ),
                             ),
-                          ] else ...[
+                            const SizedBox(height: PettiSpacing.s4),
+
+                            // Shape selector: circle vs free-form drawing.
                             Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('PUNTOS: ${_polyPoints.length}',
-                                    style: PettiText.meta()),
-                                Row(
-                                  children: [
-                                    TextButton.icon(
-                                      onPressed: _polyPoints.isEmpty
-                                          ? null
-                                          : () => setState(() {
-                                                _polyPoints.removeLast();
-                                                _updateOverlays();
-                                              }),
-                                      icon: const Icon(Icons.undo_rounded,
-                                          size: 18),
-                                      label: const Text('Deshacer'),
+                                Expanded(
+                                  child: ChoiceChip(
+                                    label: const Text('Círculo'),
+                                    avatar: const Icon(
+                                      Icons.radio_button_unchecked,
+                                      size: 16,
                                     ),
-                                    TextButton.icon(
-                                      onPressed: _polyPoints.isEmpty
-                                          ? null
-                                          : () => setState(() {
-                                                _polyPoints.clear();
-                                                _updateOverlays();
-                                              }),
-                                      icon: const Icon(
-                                          Icons.delete_outline_rounded,
-                                          size: 18),
-                                      label: const Text('Borrar'),
+                                    selected: _shape == _ZoneShape.circle,
+                                    selectedColor: PettiColors.marigoldSoft,
+                                    onSelected: (_) => setState(() {
+                                      _shape = _ZoneShape.circle;
+                                      _updateOverlays();
+                                    }),
+                                  ),
+                                ),
+                                const SizedBox(width: PettiSpacing.s2),
+                                Expanded(
+                                  child: ChoiceChip(
+                                    label: const Text('Dibujar'),
+                                    avatar: const Icon(
+                                      Icons.edit_outlined,
+                                      size: 16,
                                     ),
-                                  ],
+                                    selected: _shape == _ZoneShape.polygon,
+                                    selectedColor: PettiColors.marigoldSoft,
+                                    onSelected: (_) => setState(() {
+                                      _shape = _ZoneShape.polygon;
+                                      _updateOverlays();
+                                    }),
+                                  ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: PettiSpacing.s2),
-                            Container(
-                              padding: const EdgeInsets.all(PettiSpacing.s3),
-                              decoration: BoxDecoration(
-                                color: PettiColors.sand,
-                                borderRadius:
-                                    BorderRadius.circular(PettiRadii.sm),
-                              ),
-                              child: Row(
+                            const SizedBox(height: PettiSpacing.s4),
+
+                            if (_shape == _ZoneShape.circle) ...[
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Icon(Icons.touch_app_outlined,
-                                      size: 18, color: PettiColors.fgDim),
-                                  const SizedBox(width: PettiSpacing.s2),
-                                  Expanded(
-                                    child: Text(
-                                      _polyPoints.length < 3
-                                          ? 'Toca el mapa para marcar las '
-                                              'esquinas de tu zona '
-                                              '(mínimo 3 puntos)'
-                                          : 'Sigue tocando para agregar más '
-                                              'esquinas, o guarda la zona',
-                                      style: PettiText.bodySm().copyWith(
-                                        color: PettiColors.fgDim,
-                                      ),
+                                  Text('RADIO', style: PettiText.meta()),
+                                  Text(
+                                    _formatRadius(_radiusMeters),
+                                    style: PettiText.number(
+                                      size: 16,
+                                      weight: FontWeight.w700,
                                     ),
                                   ),
                                 ],
                               ),
+                              SliderTheme(
+                                data: SliderTheme.of(context).copyWith(
+                                  activeTrackColor: PettiColors.marigold,
+                                  inactiveTrackColor: PettiColors.fog,
+                                  thumbColor: PettiColors.marigold,
+                                  overlayColor: PettiColors.marigold.withValues(
+                                    alpha: 0.2,
+                                  ),
+                                ),
+                                child: Slider(
+                                  value: _radiusMeters,
+                                  min: 50,
+                                  max: 1000,
+                                  divisions: 95,
+                                  label: _formatRadius(_radiusMeters),
+                                  onChanged: (value) => setState(() {
+                                    _radiusMeters = value;
+                                    _updateOverlays();
+                                  }),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: PettiSpacing.s2,
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '50 m',
+                                      style: PettiText.bodySm().copyWith(
+                                        color: PettiColors.fgDim,
+                                      ),
+                                    ),
+                                    Text(
+                                      '1 km',
+                                      style: PettiText.bodySm().copyWith(
+                                        color: PettiColors.fgDim,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: PettiSpacing.s4),
+
+                              // Drag-to-position hint — Sand surface, calm tone.
+                              Container(
+                                padding: const EdgeInsets.all(PettiSpacing.s3),
+                                decoration: BoxDecoration(
+                                  color: PettiColors.sand,
+                                  borderRadius: BorderRadius.circular(
+                                    PettiRadii.sm,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.touch_app_outlined,
+                                      size: 18,
+                                      color: PettiColors.fgDim,
+                                    ),
+                                    const SizedBox(width: PettiSpacing.s2),
+                                    Expanded(
+                                      child: Text(
+                                        'Arrastra el mapa para posicionar el centro',
+                                        style: PettiText.bodySm().copyWith(
+                                          color: PettiColors.fgDim,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ] else ...[
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'PUNTOS: ${_polyPoints.length}',
+                                    style: PettiText.meta(),
+                                  ),
+                                  Row(
+                                    children: [
+                                      TextButton.icon(
+                                        onPressed: _polyPoints.isEmpty
+                                            ? null
+                                            : () => setState(() {
+                                                _polyPoints.removeLast();
+                                                _updateOverlays();
+                                              }),
+                                        icon: const Icon(
+                                          Icons.undo_rounded,
+                                          size: 18,
+                                        ),
+                                        label: const Text('Deshacer'),
+                                      ),
+                                      TextButton.icon(
+                                        onPressed: _polyPoints.isEmpty
+                                            ? null
+                                            : () => setState(() {
+                                                _polyPoints.clear();
+                                                _updateOverlays();
+                                              }),
+                                        icon: const Icon(
+                                          Icons.delete_outline_rounded,
+                                          size: 18,
+                                        ),
+                                        label: const Text('Borrar'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: PettiSpacing.s2),
+                              Container(
+                                padding: const EdgeInsets.all(PettiSpacing.s3),
+                                decoration: BoxDecoration(
+                                  color: PettiColors.sand,
+                                  borderRadius: BorderRadius.circular(
+                                    PettiRadii.sm,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.touch_app_outlined,
+                                      size: 18,
+                                      color: PettiColors.fgDim,
+                                    ),
+                                    const SizedBox(width: PettiSpacing.s2),
+                                    Expanded(
+                                      child: Text(
+                                        _polyPoints.length < 3
+                                            ? 'Toca el mapa para marcar las '
+                                                  'esquinas de tu zona '
+                                                  '(mínimo 3 puntos)'
+                                            : 'Sigue tocando para agregar más '
+                                                  'esquinas, o guarda la zona',
+                                        style: PettiText.bodySm().copyWith(
+                                          color: PettiColors.fgDim,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: PettiSpacing.s4),
+
+                            ElevatedButton(
+                              onPressed: _isCreating ? null : _saveGeofence,
+                              child: _isCreating
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        valueColor: AlwaysStoppedAnimation(
+                                          PettiColors.midnight,
+                                        ),
+                                      ),
+                                    )
+                                  : Text(
+                                      isEditing
+                                          ? 'Guardar cambios'
+                                          : 'Crear zona segura',
+                                    ),
                             ),
                           ],
-                          const SizedBox(height: PettiSpacing.s4),
-
-                          ElevatedButton(
-                            onPressed:
-                                _isCreating ? null : _saveGeofence,
-                            child: _isCreating
-                                ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      valueColor: AlwaysStoppedAnimation(
-                                          PettiColors.midnight),
-                                    ),
-                                  )
-                                : Text(
-                                    isEditing
-                                        ? 'Guardar cambios'
-                                        : 'Crear zona segura',
-                                  ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -554,7 +588,8 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-              'Marca al menos 3 puntos en el mapa para dibujar la zona'),
+            'Marca al menos 3 puntos en el mapa para dibujar la zona',
+          ),
         ),
       );
       return;
@@ -584,8 +619,7 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
           latitude: _shape == _ZoneShape.circle ? _center!.latitude : null,
           longitude: _shape == _ZoneShape.circle ? _center!.longitude : null,
           radiusMeters: _shape == _ZoneShape.circle ? _radiusMeters : null,
-          points:
-              _shape == _ZoneShape.polygon ? List.of(_polyPoints) : null,
+          points: _shape == _ZoneShape.polygon ? List.of(_polyPoints) : null,
         );
       } else if (_shape == _ZoneShape.polygon) {
         final geofenceId = await traccar.createPolygonGeofence(
@@ -608,14 +642,17 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
       if (!mounted) return;
       if (success) {
         if (widget.editGeofence == null) {
-          AmplitudeService.instance.track('Safe Zone Created', properties: {
-            'shape': _shape == _ZoneShape.polygon ? 'polygon' : 'circle',
-            if (_shape == _ZoneShape.circle)
-              'radius_meters': _radiusMeters.round(),
-            if (_shape == _ZoneShape.polygon)
-              'point_count': _polyPoints.length,
-            'device_imei': widget.device.uniqueId,
-          });
+          AmplitudeService.instance.track(
+            'Safe Zone Created',
+            properties: {
+              'shape': _shape == _ZoneShape.polygon ? 'polygon' : 'circle',
+              if (_shape == _ZoneShape.circle)
+                'radius_meters': _radiusMeters.round(),
+              if (_shape == _ZoneShape.polygon)
+                'point_count': _polyPoints.length,
+              'device_imei': widget.device.uniqueId,
+            },
+          );
         }
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -636,9 +673,9 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       if (mounted) setState(() => _isCreating = false);
     }

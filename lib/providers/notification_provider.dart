@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/notification.dart';
+import '../services/notification_prefs_api.dart';
 
 /// Provider for app notifications
 class NotificationProvider with ChangeNotifier {
@@ -10,6 +11,14 @@ class NotificationProvider with ChangeNotifier {
 
   // Notification settings
   NotificationSettings _settings = NotificationSettings();
+
+  // Server sync for the settings (Lote 2.1). Until 2026-07-28 the
+  // toggles lived ONLY in SharedPreferences while push-service sent
+  // every FCM regardless — cosmetic switches. Now the server is the
+  // authority the push-service reads; local storage is the cache.
+  final NotificationPrefsApi _prefsApi = NotificationPrefsApi();
+  bool _prefsSyncPending = false;
+  bool get prefsSyncPending => _prefsSyncPending;
 
   // Getters
   List<AppNotification> get notifications => _notifications;
@@ -29,6 +38,27 @@ class NotificationProvider with ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+
+    // Server prefs are the truth (that's what push-service consults).
+    // Fire-and-forget: on success replace local; on failure keep the
+    // local cache — the server fails open anyway (it sends when in
+    // doubt), so a stale sync can never silently lose alerts.
+    _prefsApi.fetch(_settings).then((server) async {
+      if (server == null) return;
+      _settings = server;
+      await _saveSettings();
+      notifyListeners();
+    });
+  }
+
+  /// Retry a failed prefs upload. Called from updateSettings and safe
+  /// to call anytime (no-op when nothing is pending).
+  Future<void> _syncPrefsToServer() async {
+    final ok = await _prefsApi.push(_settings);
+    if (_prefsSyncPending != !ok) {
+      _prefsSyncPending = !ok;
+      notifyListeners();
+    }
   }
 
   /// Load notifications from SharedPreferences
@@ -153,11 +183,15 @@ class NotificationProvider with ChangeNotifier {
     return _notifications.where((n) => n.type == type).toList();
   }
 
-  /// Update settings
+  /// Update settings: persist locally (instant UI) + sync to the
+  /// server, which is what push-service actually consults. If the
+  /// upload fails, prefsSyncPending flips true and the next toggle
+  /// change (or app restart) retries.
   Future<void> updateSettings(NotificationSettings newSettings) async {
     _settings = newSettings;
     await _saveSettings();
     notifyListeners();
+    await _syncPrefsToServer();
   }
 }
 

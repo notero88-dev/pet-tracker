@@ -21,13 +21,14 @@
 //     (isOnboarding=true: pop-to-home on success)
 
 import 'dart:async';
+import 'dart:io' show Platform;
 
+import 'package:app_settings/app_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 import 'package:location/location.dart' as loc;
 import 'package:network_info_plus/network_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/device.dart';
 import '../../screens/main/petti_main_tabs_screen.dart';
@@ -342,9 +343,13 @@ class _HomeZoneSetupWizardState extends State<HomeZoneSetupWizard> {
   }
 
   Future<bool> openAppSettings() async {
-    // Generic iOS app Settings deep-link. Works without entitlement.
+    // 2026-07-28 (Lote 2.2): was `launchUrl('app-settings:')` — an
+    // iOS-only URL scheme that silently no-oped on Android, stranding
+    // any Android user who denied location with a dead button. The
+    // app_settings plugin opens the right screen on both platforms.
     try {
-      return await launchUrl(Uri.parse('app-settings:'));
+      await AppSettings.openAppSettings();
+      return true;
     } catch (_) {
       return false;
     }
@@ -1787,12 +1792,21 @@ class _DeniedStep extends StatelessWidget {
     );
   }
 
-  static const _instructions = [
-    'Abre Ajustes en tu iPhone',
-    'Busca "Besti" en la lista',
-    'Activa "Ubicación → Mientras uso la app"',
-    'Activa "Ubicación precisa"',
-  ];
+  // Platform-aware (Lote 2.2): the copy hardcoded "tu iPhone" and iOS
+  // menu names, which read as wrong/broken to Android users.
+  static final _instructions = Platform.isIOS
+      ? const [
+          'Abre Ajustes en tu iPhone',
+          'Busca "Besti" en la lista',
+          'Activa "Ubicación → Mientras uso la app"',
+          'Activa "Ubicación precisa"',
+        ]
+      : const [
+          'Abre Ajustes en tu teléfono',
+          'Entra a Aplicaciones → Besti → Permisos',
+          'Activa "Ubicación → Permitir solo con la app en uso"',
+          'Activa "Usar ubicación precisa"',
+        ];
 }
 
 class _InstructionStep extends StatelessWidget {
