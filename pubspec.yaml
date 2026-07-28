@@ -1,7 +1,7 @@
 name: pettrack_app
 description: "PetTrack - Pet GPS Tracking for Colombia"
 publish_to: 'none'
-version: 1.0.1+36
+version: 1.0.1+37
 
 environment:
   sdk: ^3.11.0
