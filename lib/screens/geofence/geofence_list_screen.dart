@@ -214,11 +214,18 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
                     const SizedBox(height: PettiSpacing.s1),
                     Row(
                       children: [
-                        const Icon(Icons.radio_button_checked,
-                            size: 14, color: PettiColors.fgDim),
+                        Icon(
+                          g.type == GeofenceType.polygon
+                              ? Icons.pentagon_outlined
+                              : Icons.radio_button_checked,
+                          size: 14,
+                          color: PettiColors.fgDim,
+                        ),
                         const SizedBox(width: 4),
                         Text(
-                          'Radio: ${g.radiusText}',
+                          g.type == GeofenceType.polygon
+                              ? 'Forma libre · ${g.polygonPoints?.length ?? 0} puntos'
+                              : 'Radio: ${g.radiusText}',
                           style: PettiText.bodySm()
                               .copyWith(color: PettiColors.fgDim),
                         ),

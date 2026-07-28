@@ -3,6 +3,7 @@ import 'dart:collection' show UnmodifiableListView, UnmodifiableMapView;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' show LatLng;
 import '../models/device.dart';
 import '../models/position.dart';
 import '../models/traccar_event.dart';
@@ -416,10 +417,44 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
     required double radiusMeters,
     required int deviceId,
     Map<String, dynamic>? attributes,
+  }) {
+    return _createGeofenceWithArea(
+      name: name,
+      area: 'CIRCLE ($latitude $longitude, $radiusMeters)',
+      deviceId: deviceId,
+      attributes: attributes,
+    );
+  }
+
+  /// Create a free-form (polygon) geofence from >= 3 map points and link
+  /// it to [deviceId]. WKT format matches what Traccar emits back and
+  /// what Geofence._parseArea reads:
+  ///   `POLYGON ((lat1 lon1, lat2 lon2, ...))`
+  /// Traccar closes the ring itself — do NOT repeat the first point.
+  Future<int?> createPolygonGeofence({
+    required String name,
+    required List<LatLng> points,
+    required int deviceId,
+    Map<String, dynamic>? attributes,
+  }) {
+    assert(points.length >= 3, 'polygon needs at least 3 points');
+    final coords =
+        points.map((p) => '${p.latitude} ${p.longitude}').join(', ');
+    return _createGeofenceWithArea(
+      name: name,
+      area: 'POLYGON (($coords))',
+      deviceId: deviceId,
+      attributes: attributes,
+    );
+  }
+
+  Future<int?> _createGeofenceWithArea({
+    required String name,
+    required String area,
+    required int deviceId,
+    Map<String, dynamic>? attributes,
   }) async {
     try {
-      final area = 'CIRCLE ($latitude $longitude, $radiusMeters)';
-
       final geofence = await _api.createGeofence(
         name: name,
         area: area,

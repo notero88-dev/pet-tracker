@@ -116,6 +116,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   /// — the screenshot from 2026-05-19 1:37 PM showed TEST_1 in El Chicó
   /// with no zone overlay, leaving "is she home?" ambiguous.
   final Set<Circle> _circles = {};
+  final Set<Polygon> _zonePolygons = {};
 
   /// Cached safe-zone center + radius for in/out membership checks.
   /// Populated alongside [_circles]. Null until geofences load.
@@ -236,31 +237,45 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     final geofences = traccar.getGeofencesForDevice(traccarId);
 
     final circles = <Circle>{};
+    final polygons = <Polygon>{};
     LatLng? firstCenter;
     double? firstRadius;
     for (final g in geofences) {
-      if (g.type != GeofenceType.circle ||
-          g.center == null ||
-          g.radius == null ||
-          !g.isActive) {
-        continue;
+      if (!g.isActive) continue;
+      if (g.type == GeofenceType.circle &&
+          g.center != null &&
+          g.radius != null) {
+        circles.add(Circle(
+          circleId: CircleId('zone_${g.id}'),
+          center: g.center!,
+          radius: g.radius!,
+          fillColor: PettiColors.sabana.withValues(alpha: 0.18),
+          strokeColor: PettiColors.sabana.withValues(alpha: 0.7),
+          strokeWidth: 2,
+        ));
+        firstCenter ??= g.center;
+        firstRadius ??= g.radius;
+      } else if (g.type == GeofenceType.polygon &&
+          (g.polygonPoints?.length ?? 0) >= 3) {
+        // Free-form zones (founder request 2026-07-27) render as filled
+        // polygons alongside the classic circles.
+        polygons.add(Polygon(
+          polygonId: PolygonId('zone_${g.id}'),
+          points: List.of(g.polygonPoints!),
+          fillColor: PettiColors.sabana.withValues(alpha: 0.18),
+          strokeColor: PettiColors.sabana.withValues(alpha: 0.7),
+          strokeWidth: 2,
+        ));
       }
-      circles.add(Circle(
-        circleId: CircleId('zone_${g.id}'),
-        center: g.center!,
-        radius: g.radius!,
-        fillColor: PettiColors.sabana.withValues(alpha: 0.18),
-        strokeColor: PettiColors.sabana.withValues(alpha: 0.7),
-        strokeWidth: 2,
-      ));
-      firstCenter ??= g.center;
-      firstRadius ??= g.radius;
     }
 
     setState(() {
       _circles
         ..clear()
         ..addAll(circles);
+      _zonePolygons
+        ..clear()
+        ..addAll(polygons);
       _homeZoneCenter = firstCenter;
       _homeZoneRadiusMeters = firstRadius;
     });
@@ -802,6 +817,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                 markers: _markers,
                 polylines: _polylines,
                 circles: _circles,
+                polygons: _zonePolygons,
                 onMapCreated: (controller) => _mapController = controller,
                 myLocationButtonEnabled: true,
                 zoomControlsEnabled: false,
