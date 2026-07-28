@@ -38,6 +38,11 @@ class GeofenceCreateScreen extends StatefulWidget {
   State<GeofenceCreateScreen> createState() => _GeofenceCreateScreenState();
 }
 
+/// Zone shape being authored. Circle = classic center+radius; polygon =
+/// free-form "modo lápiz" where the user taps the map corner by corner
+/// (founder request 2026-07-27: "la zona de mi finca" isn't a circle).
+enum _ZoneShape { circle, polygon }
+
 class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
   GoogleMapController? _mapController;
   late TextEditingController _nameController;
@@ -46,8 +51,12 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
   LatLng? _center;
   bool _isCreating = false;
 
+  _ZoneShape _shape = _ZoneShape.circle;
+  final List<LatLng> _polyPoints = [];
+
   final Set<Circle> _circles = {};
   final Set<Marker> _markers = {};
+  final Set<Polygon> _polygons = {};
 
   @override
   void initState() {
@@ -55,13 +64,30 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
 
     if (widget.editGeofence != null) {
       _nameController = TextEditingController(text: widget.editGeofence!.name);
-      _center = widget.editGeofence!.center;
-      _radiusMeters = widget.editGeofence!.radius ?? 100.0;
+      final g = widget.editGeofence!;
+      if (g.type == GeofenceType.polygon &&
+          (g.polygonPoints?.length ?? 0) >= 3) {
+        _shape = _ZoneShape.polygon;
+        _polyPoints.addAll(g.polygonPoints!);
+        _center = _centroid(_polyPoints);
+      } else {
+        _center = g.center;
+        _radiusMeters = g.radius ?? 100.0;
+      }
     } else {
       _nameController = TextEditingController();
       _seedCenter();
     }
     if (_center != null) _updateOverlays();
+  }
+
+  static LatLng _centroid(List<LatLng> pts) {
+    var lat = 0.0, lng = 0.0;
+    for (final p in pts) {
+      lat += p.latitude;
+      lng += p.longitude;
+    }
+    return LatLng(lat / pts.length, lng / pts.length);
   }
 
   /// Seed the initial pin. Priority (founder request 2026-07-27):
@@ -135,10 +161,13 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
   }
 
   void _updateOverlays() {
-    if (_center == null) return;
-    _circles
-      ..clear()
-      ..add(
+    _circles.clear();
+    _polygons.clear();
+    _markers.clear();
+
+    if (_shape == _ZoneShape.circle) {
+      if (_center == null) return;
+      _circles.add(
         Circle(
           circleId: const CircleId('geofence'),
           center: _center!,
@@ -148,9 +177,44 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
           strokeWidth: 2,
         ),
       );
-    // Marker is suppressed in favor of the floating crosshair pin so the
-    // user has a clearer "drag the map to move the center" affordance.
-    _markers.clear();
+      // Marker is suppressed in favor of the floating crosshair pin so the
+      // user has a clearer "drag the map to move the center" affordance.
+      return;
+    }
+
+    // Polygon mode: one marker per tapped corner so the user sees each
+    // point land; the filled shape appears from the 3rd point on.
+    for (var i = 0; i < _polyPoints.length; i++) {
+      _markers.add(
+        Marker(
+          markerId: MarkerId('vertex_$i'),
+          position: _polyPoints[i],
+          anchor: const Offset(0.5, 0.5),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueOrange,
+          ),
+        ),
+      );
+    }
+    if (_polyPoints.length >= 3) {
+      _polygons.add(
+        Polygon(
+          polygonId: const PolygonId('geofence'),
+          points: List.of(_polyPoints),
+          fillColor: PettiColors.sabana.withValues(alpha: 0.18),
+          strokeColor: PettiColors.sabana,
+          strokeWidth: 2,
+        ),
+      );
+    }
+  }
+
+  void _onMapTap(LatLng point) {
+    if (_shape != _ZoneShape.polygon) return;
+    setState(() {
+      _polyPoints.add(point);
+      _updateOverlays();
+    });
   }
 
   @override
@@ -175,34 +239,42 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
                   ),
                   circles: _circles,
                   markers: _markers,
+                  polygons: _polygons,
                   onMapCreated: (controller) =>
                       _mapController = controller,
-                  onCameraMove: (cam) => setState(() {
-                    _center = cam.target;
-                    _updateOverlays();
-                  }),
+                  onTap: _onMapTap,
+                  onCameraMove: (cam) {
+                    if (_shape != _ZoneShape.circle) return;
+                    setState(() {
+                      _center = cam.target;
+                      _updateOverlays();
+                    });
+                  },
                   myLocationButtonEnabled: true,
                   zoomControlsEnabled: false,
                 ),
 
-                // Marigold center pin
-                IgnorePointer(
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: PettiColors.marigold,
-                        shape: BoxShape.circle,
-                        boxShadow: PettiShadows.elevation1,
-                      ),
-                      child: const Icon(
-                        Icons.location_on,
-                        color: PettiColors.midnight,
-                        size: 22,
+                // Marigold center pin — circle mode only. In polygon mode
+                // the corners are tapped directly, so a fixed center pin
+                // would just mislead.
+                if (_shape == _ZoneShape.circle)
+                  IgnorePointer(
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: PettiColors.marigold,
+                          shape: BoxShape.circle,
+                          boxShadow: PettiShadows.elevation1,
+                        ),
+                        child: const Icon(
+                          Icons.location_on,
+                          color: PettiColors.midnight,
+                          size: 22,
+                        ),
                       ),
                     ),
                   ),
-                ),
 
                 // Bottom sheet with form
                 Positioned(
@@ -246,88 +318,191 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
                             controller: _nameController,
                             decoration: const InputDecoration(
                               labelText: 'Nombre de la zona *',
-                              hintText: 'Ej: Casa, Trabajo, Parque',
+                              hintText: 'Ej: Casa, Trabajo, Finca',
                               prefixIcon:
                                   Icon(Icons.location_on_outlined),
                             ),
                           ),
                           const SizedBox(height: PettiSpacing.s4),
 
+                          // Shape selector: circle vs free-form drawing.
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('RADIO', style: PettiText.meta()),
-                              Text(
-                                _formatRadius(_radiusMeters),
-                                style: PettiText.number(
-                                  size: 16,
-                                  weight: FontWeight.w700,
+                              Expanded(
+                                child: ChoiceChip(
+                                  label: const Text('Círculo'),
+                                  avatar: const Icon(
+                                      Icons.radio_button_unchecked,
+                                      size: 16),
+                                  selected: _shape == _ZoneShape.circle,
+                                  selectedColor: PettiColors.marigoldSoft,
+                                  onSelected: (_) => setState(() {
+                                    _shape = _ZoneShape.circle;
+                                    _updateOverlays();
+                                  }),
+                                ),
+                              ),
+                              const SizedBox(width: PettiSpacing.s2),
+                              Expanded(
+                                child: ChoiceChip(
+                                  label: const Text('Dibujar'),
+                                  avatar: const Icon(Icons.edit_outlined,
+                                      size: 16),
+                                  selected: _shape == _ZoneShape.polygon,
+                                  selectedColor: PettiColors.marigoldSoft,
+                                  onSelected: (_) => setState(() {
+                                    _shape = _ZoneShape.polygon;
+                                    _updateOverlays();
+                                  }),
                                 ),
                               ),
                             ],
                           ),
-                          SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              activeTrackColor: PettiColors.marigold,
-                              inactiveTrackColor: PettiColors.fog,
-                              thumbColor: PettiColors.marigold,
-                              overlayColor: PettiColors.marigold
-                                  .withValues(alpha: 0.2),
-                            ),
-                            child: Slider(
-                              value: _radiusMeters,
-                              min: 50,
-                              max: 1000,
-                              divisions: 95,
-                              label: _formatRadius(_radiusMeters),
-                              onChanged: (value) => setState(() {
-                                _radiusMeters = value;
-                                _updateOverlays();
-                              }),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: PettiSpacing.s2),
-                            child: Row(
+                          const SizedBox(height: PettiSpacing.s4),
+
+                          if (_shape == _ZoneShape.circle) ...[
+                            Row(
                               mainAxisAlignment:
                                   MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('50 m',
-                                    style: PettiText.bodySm().copyWith(
-                                        color: PettiColors.fgDim)),
-                                Text('1 km',
-                                    style: PettiText.bodySm().copyWith(
-                                        color: PettiColors.fgDim)),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: PettiSpacing.s4),
-
-                          // Drag-to-position hint — Sand surface, calm tone.
-                          Container(
-                            padding: const EdgeInsets.all(PettiSpacing.s3),
-                            decoration: BoxDecoration(
-                              color: PettiColors.sand,
-                              borderRadius:
-                                  BorderRadius.circular(PettiRadii.sm),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.touch_app_outlined,
-                                    size: 18, color: PettiColors.fgDim),
-                                const SizedBox(width: PettiSpacing.s2),
-                                Expanded(
-                                  child: Text(
-                                    'Arrastra el mapa para posicionar el centro',
-                                    style: PettiText.bodySm().copyWith(
-                                      color: PettiColors.fgDim,
-                                    ),
+                                Text('RADIO', style: PettiText.meta()),
+                                Text(
+                                  _formatRadius(_radiusMeters),
+                                  style: PettiText.number(
+                                    size: 16,
+                                    weight: FontWeight.w700,
                                   ),
                                 ),
                               ],
                             ),
-                          ),
+                            SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                activeTrackColor: PettiColors.marigold,
+                                inactiveTrackColor: PettiColors.fog,
+                                thumbColor: PettiColors.marigold,
+                                overlayColor: PettiColors.marigold
+                                    .withValues(alpha: 0.2),
+                              ),
+                              child: Slider(
+                                value: _radiusMeters,
+                                min: 50,
+                                max: 1000,
+                                divisions: 95,
+                                label: _formatRadius(_radiusMeters),
+                                onChanged: (value) => setState(() {
+                                  _radiusMeters = value;
+                                  _updateOverlays();
+                                }),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: PettiSpacing.s2),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('50 m',
+                                      style: PettiText.bodySm().copyWith(
+                                          color: PettiColors.fgDim)),
+                                  Text('1 km',
+                                      style: PettiText.bodySm().copyWith(
+                                          color: PettiColors.fgDim)),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: PettiSpacing.s4),
+
+                            // Drag-to-position hint — Sand surface, calm tone.
+                            Container(
+                              padding: const EdgeInsets.all(PettiSpacing.s3),
+                              decoration: BoxDecoration(
+                                color: PettiColors.sand,
+                                borderRadius:
+                                    BorderRadius.circular(PettiRadii.sm),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.touch_app_outlined,
+                                      size: 18, color: PettiColors.fgDim),
+                                  const SizedBox(width: PettiSpacing.s2),
+                                  Expanded(
+                                    child: Text(
+                                      'Arrastra el mapa para posicionar el centro',
+                                      style: PettiText.bodySm().copyWith(
+                                        color: PettiColors.fgDim,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ] else ...[
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('PUNTOS: ${_polyPoints.length}',
+                                    style: PettiText.meta()),
+                                Row(
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: _polyPoints.isEmpty
+                                          ? null
+                                          : () => setState(() {
+                                                _polyPoints.removeLast();
+                                                _updateOverlays();
+                                              }),
+                                      icon: const Icon(Icons.undo_rounded,
+                                          size: 18),
+                                      label: const Text('Deshacer'),
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: _polyPoints.isEmpty
+                                          ? null
+                                          : () => setState(() {
+                                                _polyPoints.clear();
+                                                _updateOverlays();
+                                              }),
+                                      icon: const Icon(
+                                          Icons.delete_outline_rounded,
+                                          size: 18),
+                                      label: const Text('Borrar'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: PettiSpacing.s2),
+                            Container(
+                              padding: const EdgeInsets.all(PettiSpacing.s3),
+                              decoration: BoxDecoration(
+                                color: PettiColors.sand,
+                                borderRadius:
+                                    BorderRadius.circular(PettiRadii.sm),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.touch_app_outlined,
+                                      size: 18, color: PettiColors.fgDim),
+                                  const SizedBox(width: PettiSpacing.s2),
+                                  Expanded(
+                                    child: Text(
+                                      _polyPoints.length < 3
+                                          ? 'Toca el mapa para marcar las '
+                                              'esquinas de tu zona '
+                                              '(mínimo 3 puntos)'
+                                          : 'Sigue tocando para agregar más '
+                                              'esquinas, o guarda la zona',
+                                      style: PettiText.bodySm().copyWith(
+                                        color: PettiColors.fgDim,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: PettiSpacing.s4),
 
                           ElevatedButton(
@@ -375,7 +550,16 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
       );
       return;
     }
-    if (_center == null) {
+    if (_shape == _ZoneShape.polygon && _polyPoints.length < 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Marca al menos 3 puntos en el mapa para dibujar la zona'),
+        ),
+      );
+      return;
+    }
+    if (_shape == _ZoneShape.circle && _center == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error al obtener ubicación')),
       );
@@ -394,6 +578,13 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
           area: _buildWKT(),
           deviceId: widget.device.requireTraccarId(),
         );
+      } else if (_shape == _ZoneShape.polygon) {
+        final geofenceId = await traccar.createPolygonGeofence(
+          name: _nameController.text.trim(),
+          points: List.of(_polyPoints),
+          deviceId: widget.device.requireTraccarId(),
+        );
+        success = geofenceId != null;
       } else {
         final geofenceId = await traccar.createCircularGeofence(
           name: _nameController.text.trim(),
@@ -409,7 +600,11 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
       if (success) {
         if (widget.editGeofence == null) {
           AmplitudeService.instance.track('Safe Zone Created', properties: {
-            'radius_meters': _radiusMeters.round(),
+            'shape': _shape == _ZoneShape.polygon ? 'polygon' : 'circle',
+            if (_shape == _ZoneShape.circle)
+              'radius_meters': _radiusMeters.round(),
+            if (_shape == _ZoneShape.polygon)
+              'point_count': _polyPoints.length,
             'device_imei': widget.device.uniqueId,
           });
         }
@@ -440,13 +635,17 @@ class _GeofenceCreateScreenState extends State<GeofenceCreateScreen> {
     }
   }
 
-  /// WKT for Traccar's geofence area. Format:
-  ///   `CIRCLE (LAT LON, RADIUS_METERS)`
-  /// Note: METERS, not degrees, and a comma between LON and RADIUS. The
-  /// previous version of this method had it wrong — see the file header
-  /// comment for context. Fixed in lockstep with TraccarProvider's
-  /// createCircularGeofence (commit 4c07131).
+  /// WKT for Traccar's geofence area. Formats:
+  ///   `CIRCLE (LAT LON, RADIUS_METERS)` — meters, not degrees, comma
+  ///       before the radius (see file header; fixed in commit 4c07131).
+  ///   `POLYGON ((LAT1 LON1, LAT2 LON2, ...))` — Traccar closes the ring
+  ///       itself; do NOT repeat the first point.
   String _buildWKT() {
+    if (_shape == _ZoneShape.polygon) {
+      final coords =
+          _polyPoints.map((p) => '${p.latitude} ${p.longitude}').join(', ');
+      return 'POLYGON (($coords))';
+    }
     return 'CIRCLE (${_center!.latitude} ${_center!.longitude}, $_radiusMeters)';
   }
 }
