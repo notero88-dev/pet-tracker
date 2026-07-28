@@ -91,6 +91,7 @@ dependencies:
 
   # Amplitude analytics SDK for Flutter (iOS + Android).
   amplitude_flutter: ^4.2.1
+  app_settings: ^5.1.1
 
 dev_dependencies:
   flutter_test:
