@@ -17,7 +17,6 @@ import 'dart:async';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/widgets.dart';
 
 import '../models/device.dart';
@@ -241,46 +240,20 @@ class Mode8ConfigurationController {
       );
     }
 
-    // Client-side Traccar geofence creation.
-    //
-    // ⚠️ The backend's homeSetupRunner ALREADY creates and links the
-    // Traccar geofence on the user's behalf via its admin session
-    // (see logs: "homeSetupRunner: Traccar geofence registered" +
-    // "Linked geofence X to user Y"). This client-side call is
-    // therefore redundant — but kept for two reasons:
-    //
-    //   1. It pulls the geofence into the user's TraccarProvider state
-    //      immediately, so the Mapa shows it without waiting for the
-    //      next refresh tick.
-    //   2. The legacy A6 onboarding path (a6_configuring_screen.dart)
-    //      consumes the returned geofenceId.
-    //
-    // Failure here is NON-FATAL: the backend has already done the
-    // server-side work; a duplicate-create from the user session can
-    // collide with the admin-created one (name conflict, racy session
-    // lookup, etc.) and we don't want to roll back a successful setup
-    // because of it. Log + continue with id=0 so the success step
-    // still fires and the user lands in the app.
+    // 2026-07-28 (Lote 1): the client-side Traccar geofence create that
+    // used to live here was REMOVED. The backend's homeSetupRunner
+    // already creates and links the home geofence server-side; the
+    // duplicate client create was the source of the multiplied
+    // "X — Casa" zones observed in prod (4 copies for one device).
+    // We keep the one thing it actually bought us — the map showing the
+    // zone immediately — by refreshing the geofence list instead.
+    // (The legacy A6 path that consumed the returned geofenceId is dead
+    // code; live consumers ignore the id.)
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
-    final geofenceId = await traccar.createCircularGeofence(
-      name: 'Casa de $petName',
-      latitude: homeCenter.latitude,
-      longitude: homeCenter.longitude,
-      radiusMeters: radiusMeters.toDouble(),
-      deviceId: device.requireTraccarId(),
-    );
-
-    if (geofenceId == null) {
-      if (kDebugMode) {
-        debugPrint(
-          'Mode8Controller: client-side Traccar geofence create failed '
-          'but backend already created one — continuing. detail=${traccar.errorMessage}',
-        );
-      }
-    }
+    await traccar.loadGeofences();
 
     _emit(Mode8WizardState.success);
-    return Mode8WizardSuccess(traccarGeofenceId: geofenceId ?? 0);
+    return const Mode8WizardSuccess(traccarGeofenceId: 0);
   }
 
   /// User-initiated cancel (e.g., back button). Marks the controller as

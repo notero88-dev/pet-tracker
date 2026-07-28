@@ -8,6 +8,7 @@ import '../models/device.dart';
 import '../models/position.dart';
 import '../models/traccar_event.dart';
 import '../models/geofence.dart';
+import '../services/zones_api.dart';
 import '../services/traccar_api.dart';
 import '../services/traccar_websocket.dart';
 import '../services/provisioning_api.dart';
@@ -33,6 +34,7 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
   final TraccarApi _api = TraccarApi();
   final TraccarWebSocket _ws = TraccarWebSocket();
   final ProvisioningApi _provisioningApi = ProvisioningApi();
+  final ZonesApi _zonesApi = ZonesApi();
 
   List<Device> _devices = [];
   Map<int, Position> _lastPositions = {}; // deviceId -> Position
@@ -415,63 +417,56 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
     required double latitude,
     required double longitude,
     required double radiusMeters,
-    required int deviceId,
-    Map<String, dynamic>? attributes,
-  }) {
-    return _createGeofenceWithArea(
-      name: name,
-      area: 'CIRCLE ($latitude $longitude, $radiusMeters)',
-      deviceId: deviceId,
-      attributes: attributes,
-    );
+    required String imei,
+  }) async {
+    // 2026-07-28 (Lote 1): zone writes go through the provisioning-api's
+    // atomic endpoint (create + device link + read-back verification +
+    // Postgres mirror row, with server-side rollback). The old two-call
+    // path from the phone could drop the link mid-flight and still look
+    // successful — and never wrote the mirror row push-service needs to
+    // send exit/enter alerts. A non-null return now means the zone can
+    // actually alert.
+    try {
+      final id = await _zonesApi.createCircleZone(
+        imei: imei,
+        name: name,
+        latitude: latitude,
+        longitude: longitude,
+        radiusMeters: radiusMeters,
+      );
+      await loadGeofences();
+      return id;
+    } on ZoneApiException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      _errorMessage = 'Error al crear zona: $e';
+      notifyListeners();
+      return null;
+    }
   }
 
-  /// Create a free-form (polygon) geofence from >= 3 map points and link
-  /// it to [deviceId]. WKT format matches what Traccar emits back and
-  /// what Geofence._parseArea reads:
-  ///   `POLYGON ((lat1 lon1, lat2 lon2, ...))`
-  /// Traccar closes the ring itself — do NOT repeat the first point.
+  /// Create a free-form (polygon) zone from >= 3 map points. Same
+  /// atomic server path as the circular variant above.
   Future<int?> createPolygonGeofence({
     required String name,
     required List<LatLng> points,
-    required int deviceId,
-    Map<String, dynamic>? attributes,
-  }) {
-    assert(points.length >= 3, 'polygon needs at least 3 points');
-    final coords =
-        points.map((p) => '${p.latitude} ${p.longitude}').join(', ');
-    return _createGeofenceWithArea(
-      name: name,
-      area: 'POLYGON (($coords))',
-      deviceId: deviceId,
-      attributes: attributes,
-    );
-  }
-
-  Future<int?> _createGeofenceWithArea({
-    required String name,
-    required String area,
-    required int deviceId,
-    Map<String, dynamic>? attributes,
+    required String imei,
   }) async {
+    assert(points.length >= 3, 'polygon needs at least 3 points');
     try {
-      final geofence = await _api.createGeofence(
+      final id = await _zonesApi.createPolygonZone(
+        imei: imei,
         name: name,
-        area: area,
-        attributes: attributes,
+        points: points,
       );
-
-      if (geofence == null) return null;
-
-      final geofenceId = geofence['id'] as int;
-      final linked = await _api.linkGeofenceToDevice(geofenceId, deviceId);
-      if (!linked) {
-        // Geofence exists in Traccar but isn't linked to the device. Not
-        // strictly an error (admin can link manually) but worth logging.
-        debugPrint(
-            'Warning: created geofence $geofenceId but failed to link to device $deviceId');
-      }
-      return geofenceId;
+      await loadGeofences();
+      return id;
+    } on ZoneApiException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+      return null;
     } catch (e) {
       _errorMessage = 'Error al crear zona: $e';
       notifyListeners();
@@ -530,15 +525,21 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
     return _geofences.where((g) => g.deviceId == deviceId || g.deviceId == null).toList();
   }
 
-  /// Delete geofence
-  Future<bool> deleteGeofence(int geofenceId) async {
+  /// Delete a zone via the atomic server endpoint (soft-deletes the
+  /// Postgres mirror first, reverts it if the Traccar delete fails).
+  Future<bool> deleteGeofence({
+    required String imei,
+    required int geofenceId,
+  }) async {
     try {
-      final success = await _api.deleteGeofence(geofenceId);
-      if (success) {
-        _geofences.removeWhere((g) => g.id == geofenceId);
-        notifyListeners();
-      }
-      return success;
+      await _zonesApi.deleteZone(imei: imei, traccarGeofenceId: geofenceId);
+      _geofences.removeWhere((g) => g.id == geofenceId);
+      notifyListeners();
+      return true;
+    } on ZoneApiException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+      return false;
     } catch (e) {
       _errorMessage = 'Error al eliminar geocerca: $e';
       notifyListeners();
@@ -546,30 +547,46 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
-  /// Update geofence (delete + recreate)
+  /// Update a zone IN PLACE via the atomic server endpoint.
+  ///
+  /// 2026-07-28 (Lote 1): the previous implementation deleted the old
+  /// geofence FIRST and then created a new one — a mid-flight failure
+  /// silently destroyed the user's zone while still returning true.
+  /// The server now modifies the existing Traccar geofence; on any
+  /// failure the old zone survives untouched.
   Future<bool> updateGeofence({
+    required String imei,
     required int geofenceId,
     required String name,
-    required String area,
-    int? deviceId,
+    double? latitude,
+    double? longitude,
+    double? radiusMeters,
+    List<LatLng>? points,
   }) async {
     try {
-      // Delete old geofence
-      await _api.deleteGeofence(geofenceId);
-      
-      // Create new geofence
-      final newGeofence = await _api.createGeofence(
-        name: name,
-        area: area,
-      );
-      
-      if (newGeofence != null && deviceId != null) {
-        await _api.linkGeofenceToDevice(newGeofence['id'], deviceId);
+      if (points != null) {
+        await _zonesApi.updatePolygonZone(
+          imei: imei,
+          traccarGeofenceId: geofenceId,
+          name: name,
+          points: points,
+        );
+      } else {
+        await _zonesApi.updateCircleZone(
+          imei: imei,
+          traccarGeofenceId: geofenceId,
+          name: name,
+          latitude: latitude!,
+          longitude: longitude!,
+          radiusMeters: radiusMeters!,
+        );
       }
-      
-      // Reload geofences
       await loadGeofences();
       return true;
+    } on ZoneApiException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+      return false;
     } catch (e) {
       _errorMessage = 'Error al actualizar geocerca: $e';
       notifyListeners();
