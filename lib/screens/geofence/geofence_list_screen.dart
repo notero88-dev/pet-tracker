@@ -42,10 +42,13 @@ class _GeofenceListScreenState extends State<GeofenceListScreen> {
   Future<void> _loadGeofences() async {
     setState(() => _isLoading = true);
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
-    await traccar.loadGeofences();
+    // Lote 3.5: per-pet listing from the server mirror. The old
+    // loadGeofences()+getGeofencesForDevice() pair filtered on
+    // `deviceId == null`, which matched EVERY zone in the account.
+    await traccar.loadZonesForImei(widget.device.uniqueId);
     if (mounted) {
       setState(() {
-        _geofences = traccar.getGeofencesForDevice(widget.device.requireTraccarId());
+        _geofences = traccar.zonesForImei(widget.device.uniqueId);
         _isLoading = false;
       });
     }

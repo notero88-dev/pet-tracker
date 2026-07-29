@@ -69,6 +69,33 @@ class ZonesApi {
     };
   }
 
+  /// List this pet's zones (Lote 3.5). The server lists from the
+  /// Postgres mirror — the row that decides whether an alert can fire —
+  /// scoped to THIS device's pet. The app used to read the account's
+  /// whole Traccar geofence set and filter on `deviceId == null`, but
+  /// Traccar's geofence JSON has no deviceId so that matched every
+  /// zone: with two pets, pet A's zones drew on pet B's map and the
+  /// 3-zone limit counted them all.
+  ///
+  /// `area` may be null when Traccar is unreachable; callers should
+  /// fall back to the circle fields so the list still renders.
+  Future<List<Map<String, dynamic>>> listZones({required String imei}) async {
+    final res = await _client
+        .get(Uri.parse('$baseUrl/devices/$imei/zones'),
+            headers: await _authHeaders())
+        .timeout(const Duration(seconds: 15));
+    final json = _decode(res);
+    if (res.statusCode == 200 && json?['success'] == true) {
+      final zones = json?['zones'];
+      if (zones is List) return zones.whereType<Map<String, dynamic>>().toList();
+      return const [];
+    }
+    throw ZoneApiException(
+      _errorMessage(json, res.statusCode),
+      statusCode: res.statusCode,
+    );
+  }
+
   /// Create a zone. Returns the Traccar geofence id on success; throws
   /// [ZoneApiException] on any failure (the server already rolled back).
   Future<int> createZone({

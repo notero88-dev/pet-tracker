@@ -236,12 +236,17 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     // build()s see the new circles. If fetch fails the provider logs
     // the error and we keep an empty list — UI silently falls back to
     // the geocoded place name.
-    if (traccar.geofences.isEmpty) {
-      await traccar.loadGeofences();
+    // Lote 3.5: zones are fetched PER PET from the server mirror. The
+    // previous getGeofencesForDevice() filter matched every zone in the
+    // account (Traccar's geofence JSON has no deviceId), so with two
+    // pets each map drew the other's zones.
+    var geofences = traccar.zonesForImei(widget.device.uniqueId);
+    if (geofences.isEmpty) {
+      await traccar.loadZonesForImei(widget.device.uniqueId);
+      if (!mounted) return;
+      geofences = traccar.zonesForImei(widget.device.uniqueId);
     }
     if (!mounted) return;
-
-    final geofences = traccar.getGeofencesForDevice(traccarId);
 
     final circles = <Circle>{};
     final polygons = <Polygon>{};

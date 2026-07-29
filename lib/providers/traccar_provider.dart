@@ -520,6 +520,61 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
     }
   }
 
+  /// Load the zones of ONE pet from the provisioning-api (Lote 3.5).
+  ///
+  /// Authoritative source: the Postgres mirror row, which is what
+  /// push-service consults to decide whether an alert can fire. Results
+  /// are cached per IMEI and read back via [zonesForImei].
+  ///
+  /// Previously screens called loadGeofences() + getGeofencesForDevice()
+  /// which filtered on `g.deviceId == null` — and Traccar's geofence
+  /// JSON never carries deviceId, so EVERY zone in the account matched:
+  /// multi-pet households saw pet A's zones on pet B's map and the
+  /// 3-zone limit counted the whole account.
+  ///
+  /// On failure the previous cache for that IMEI is kept (a transient
+  /// network blip must not blank out the user's zone list) and
+  /// errorMessage is set.
+  Future<bool> loadZonesForImei(String imei) async {
+    try {
+      final raw = await _zonesApi.listZones(imei: imei);
+      _zonesByImei[imei] = raw.map(_zoneFromJson).toList();
+      notifyListeners();
+      return true;
+    } on ZoneApiException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Error al cargar zonas: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Cached zones for [imei] (empty until [loadZonesForImei] succeeds).
+  List<Geofence> zonesForImei(String imei) =>
+      UnmodifiableListView(_zonesByImei[imei] ?? const <Geofence>[]);
+
+  final Map<String, List<Geofence>> _zonesByImei = {};
+
+  /// Map a server zone row onto the app's Geofence model. `area` is the
+  /// live WKT from Traccar; when it is null (Traccar unreachable) we
+  /// synthesize a CIRCLE from the mirror's lat/lng/radius so the zone
+  /// still renders rather than vanishing.
+  static Geofence _zoneFromJson(Map<String, dynamic> j) {
+    final area = j['area'] as String?;
+    final lat = (j['latitude'] as num?)?.toDouble() ?? 0;
+    final lng = (j['longitude'] as num?)?.toDouble() ?? 0;
+    final radius = (j['radiusMeters'] as num?)?.toDouble() ?? 100;
+    return Geofence(
+      id: j['id'] as int,
+      name: j['name'] as String? ?? 'Zona',
+      area: area ?? 'CIRCLE ($lat $lng, $radius)',
+      createdAt: DateTime.now(),
+    );
+  }
+
   /// Get geofences for a specific device
   List<Geofence> getGeofencesForDevice(int deviceId) {
     return _geofences.where((g) => g.deviceId == deviceId || g.deviceId == null).toList();
