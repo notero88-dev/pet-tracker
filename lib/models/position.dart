@@ -32,8 +32,14 @@ class Position {
     return Position(
       id: json['id'] as int,
       deviceId: json['deviceId'] as int,
-      deviceTime: DateTime.parse(json['deviceTime'] as String),
-      serverTime: DateTime.parse(json['serverTime'] as String),
+      // .toLocal() (2026-07-31): Traccar sends ISO-8601 in UTC, so
+      // DateTime.parse returns a UTC DateTime and every DateFormat
+      // rendered it 5 hours ahead of Bogota. Customer report:
+      // "el reloj del historial muestra una hora incorrecta
+      // (desfasada 5 horas)". The device itself is correct (TZ:0 —
+      // the server owns the timezone), so the fix belongs here.
+      deviceTime: DateTime.parse(json['deviceTime'] as String).toLocal(),
+      serverTime: DateTime.parse(json['serverTime'] as String).toLocal(),
       latitude: (json['latitude'] as num).toDouble(),
       longitude: (json['longitude'] as num).toDouble(),
       altitude: json['altitude'] != null 

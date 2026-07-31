@@ -1302,7 +1302,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                         child: _buildStatCard(
                           icon: Icons.battery_charging_full_rounded,
                           label: 'Batería',
-                          value: '${pos.batteryLevel}%',
+                          value: BatteryDisplay.label(pos.batteryLevel),
                           valueColor:
                               _batteryColor(pos.batteryLevel!),
                         ),

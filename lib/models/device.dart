@@ -27,9 +27,9 @@ class Device {
       uniqueId: json['uniqueId'] as String,
       traccarId: json['traccarId'] as int?,
       status: json['status'] as String,
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
       lastUpdate: json['lastUpdate'] != null 
-          ? DateTime.parse(json['lastUpdate'] as String)
+          ? DateTime.parse(json['lastUpdate'] as String).toLocal()
           : null,
       lastLocation: json['lastLocation'] as String?,
     );
