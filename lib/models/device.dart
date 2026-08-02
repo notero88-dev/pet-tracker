@@ -1,3 +1,16 @@
+/// Coarse connectivity for UI surfaces.
+///
+/// A collar in MODE 8 sleeps by design whenever the pet is home or
+/// still — hours of silence are its NORMAL, healthy state. The old
+/// binary (online/disconnected at 30 min) painted every sleeping
+/// collar red, so a customer's first hours with a working product
+/// looked like a broken one (reported 2026-08-02, first-day
+/// onboarding). Three buckets instead of two:
+///   online  — reported within the last 30 min
+///   resting — quiet for 30 min..24 h: sleeping / saving battery
+///   offline — silent for over 24 h (or never seen): worth worrying
+enum DeviceConnectivity { online, resting, offline }
+
 /// Device model for GPS tracker
 class Device {
   final int id;
@@ -51,10 +64,27 @@ class Device {
   bool get isOnline => lastUpdate != null &&
       DateTime.now().difference(lastUpdate!).inMinutes < 30;
 
+  DeviceConnectivity get connectivity {
+    // Instant math is timezone-safe: difference() compares epochs, so
+    // a UTC lastUpdate against a local now() still yields the true gap.
+    if (lastUpdate == null) return DeviceConnectivity.offline;
+    final quiet = DateTime.now().difference(lastUpdate!);
+    if (quiet.inMinutes < 30) return DeviceConnectivity.online;
+    if (quiet.inHours < 24) return DeviceConnectivity.resting;
+    return DeviceConnectivity.offline;
+  }
+
   String get statusText {
     switch (status) {
       case 'active':
-        return isOnline ? 'En línea' : 'Desconectado';
+        switch (connectivity) {
+          case DeviceConnectivity.online:
+            return 'En línea';
+          case DeviceConnectivity.resting:
+            return 'En reposo';
+          case DeviceConnectivity.offline:
+            return 'Desconectado';
+        }
       case 'inactive':
         return 'Inactivo';
       case 'pending':
