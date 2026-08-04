@@ -717,11 +717,33 @@ class _TrackerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = (pet['name'] as String?)?.trim() ?? 'Mascota';
-    final online = device?.isOnline ?? false;
+    final connectivity =
+        device?.connectivity ?? DeviceConnectivity.offline;
     final imei = (pet['deviceImei'] as String?)?.trim();
     final sub = imei != null && imei.isNotEmpty
         ? 'MT710 · IMEI $imei'
         : 'Sin dispositivo';
+
+    // Resting is a healthy state (MODE 8 sleeping at home) — calm
+    // neutrals, never the alert palette. See DeviceConnectivity.
+    final (IconData stateIcon, Color stateBg, Color stateFg) =
+        switch (connectivity) {
+      DeviceConnectivity.online => (
+          Icons.pets,
+          PettiColors.sabanaSoft,
+          PettiColors.sabana,
+        ),
+      DeviceConnectivity.resting => (
+          Icons.bedtime_rounded,
+          PettiColors.sand,
+          PettiColors.trail,
+        ),
+      DeviceConnectivity.offline => (
+          Icons.wifi_off_rounded,
+          PettiColors.duskSoft,
+          PettiColors.duskRose,
+        ),
+    };
 
     return InkWell(
       onTap: device != null
@@ -747,14 +769,13 @@ class _TrackerRow extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color:
-                    online ? PettiColors.sabanaSoft : PettiColors.duskSoft,
+                color: stateBg,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                online ? Icons.pets : Icons.wifi_off_rounded,
+                stateIcon,
                 size: 18,
-                color: online ? PettiColors.sabana : PettiColors.duskRose,
+                color: stateFg,
               ),
             ),
             const SizedBox(width: 12),

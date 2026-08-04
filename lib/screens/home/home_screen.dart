@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/device.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/traccar_provider.dart';
 import '../../providers/notification_provider.dart';
@@ -479,8 +480,15 @@ class _PetCardState extends State<_PetCard> {
     // Matches the design system's color semantics already used on the
     // activity dashboard's header strip.
     final hasLocation = locationLabel != null;
-    final IconData subtitleIcon =
-        isOnline ? Icons.place : Icons.wifi_off_rounded;
+    // Typed explicitly: `device` flows in as dynamic here, and a switch
+    // expression over dynamic can't be proven exhaustive.
+    final DeviceConnectivity connectivity =
+        device.connectivity as DeviceConnectivity;
+    final IconData subtitleIcon = switch (connectivity) {
+      DeviceConnectivity.online => Icons.place,
+      DeviceConnectivity.resting => Icons.bedtime_rounded,
+      DeviceConnectivity.offline => Icons.wifi_off_rounded,
+    };
     final Color subtitleIconColor =
         isOnline ? PettiColors.marigoldDim : PettiColors.trail;
     final Color subtitleTextColor =
@@ -562,6 +570,10 @@ class _PetCardState extends State<_PetCard> {
                                   battery: battery,
                                   lastSyncText: lastSyncText,
                                   textStyle: subtitleTextStyle,
+                                  noLocationLabel: connectivity ==
+                                          DeviceConnectivity.resting
+                                      ? 'En reposo'
+                                      : 'Sin conexión',
                                 ),
                               ),
                               maxLines: 1,
@@ -599,9 +611,12 @@ class _PetCardState extends State<_PetCard> {
     required int? battery,
     required String lastSyncText,
     required TextStyle textStyle,
+    // "En reposo" for a resting collar (MODE 8 sleeping — healthy),
+    // "Sin conexión" only when it's genuinely gone quiet too long.
+    String noLocationLabel = 'Sin conexión',
   }) {
     if (!hasLocation) {
-      return [TextSpan(text: 'Sin conexión · $lastSyncText')];
+      return [TextSpan(text: '$noLocationLabel · $lastSyncText')];
     }
     final spans = <InlineSpan>[
       TextSpan(text: locationLabel),
