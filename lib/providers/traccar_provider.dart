@@ -61,6 +61,24 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
   static const Duration _reconnectFirstDelay = Duration(seconds: 1);
   static const Duration _reconnectMaxDelay = Duration(seconds: 30);
 
+  // Degraded-mode polling.
+  //
+  // Positions normally arrive push-style over the Traccar WebSocket, so
+  // no screen polls: MapaTab just rebuilds off provider state. When that
+  // socket drops — network handover, app backgrounded, Android battery
+  // saver — nothing replaces it. The only poller in the app lived in
+  // device_detail_screen at a 300s cadence, so the map could sit up to
+  // five minutes stale while the collar was reporting fine every 10s.
+  // Diagnosed 2026-08-04 on a customer walk: server had the position
+  // 1-3s after the fix, the phone showed the "Reconectando…" pill, and
+  // the owner concluded the tracker was broken.
+  //
+  // While the socket is NOT connected we poll every 30s as a safety net,
+  // and stop the moment it comes back (push beats polling — no reason to
+  // burn battery and data on both).
+  Timer? _degradedPollTimer;
+  static const Duration _degradedPollInterval = Duration(seconds: 30);
+
   TraccarConnectionStatus _connectionStatus = TraccarConnectionStatus.disconnected;
 
   // Getters
@@ -107,6 +125,7 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
         _isLoading = false;
         _connectionStatus = TraccarConnectionStatus.connected;
         _reconnectAttempts = 0;
+        _syncDegradedPolling();
         notifyListeners();
         return true;
       } else {
@@ -169,6 +188,7 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
     if (status == 'connected') {
       _connectionStatus = TraccarConnectionStatus.connected;
       _reconnectAttempts = 0;
+      _syncDegradedPolling();
       notifyListeners();
       return;
     }
@@ -178,9 +198,35 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
       // is expected and should not trigger reconnect.
       if (_savedEmail == null || _savedPassword == null) return;
       _connectionStatus = TraccarConnectionStatus.reconnecting;
+      _syncDegradedPolling();
       notifyListeners();
       _scheduleReconnect();
     }
+  }
+
+  /// Start/stop the degraded-mode poller to match the socket state.
+  /// Idempotent: safe to call on every status transition.
+  void _syncDegradedPolling() {
+    final socketUp = _connectionStatus == TraccarConnectionStatus.connected;
+    if (socketUp) {
+      _degradedPollTimer?.cancel();
+      _degradedPollTimer = null;
+      return;
+    }
+    // Not connected. Nothing to poll for if the user isn't signed in.
+    if (_savedEmail == null || _savedPassword == null) {
+      _degradedPollTimer?.cancel();
+      _degradedPollTimer = null;
+      return;
+    }
+    if (_degradedPollTimer != null) return; // already polling
+    // Refresh once immediately — the socket may have died right after a
+    // position we never received; waiting a full interval to find out
+    // is the exact staleness this poller exists to prevent.
+    unawaited(refreshDevices());
+    _degradedPollTimer = Timer.periodic(_degradedPollInterval, (_) {
+      unawaited(refreshDevices());
+    });
   }
 
   /// Schedule the next reconnect attempt with exponential backoff:
@@ -657,6 +703,10 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _reconnectAttempts = 0;
+    // Same reasoning for the degraded poller: it must die here, before
+    // creds are cleared, or a logged-out app keeps hitting the API.
+    _degradedPollTimer?.cancel();
+    _degradedPollTimer = null;
     _savedEmail = null;
     _savedPassword = null;
 

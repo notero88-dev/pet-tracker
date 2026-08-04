@@ -65,7 +65,15 @@ class AppConstants {
   static const int maxGeofencesPerPet = 3;
   
   // Tracking
-  static const int normalUpdateIntervalSeconds = 300; // 5 minutes
+  // Detail-screen refresh cadence. 300s until 2026-08-04: that was set
+  // when the Traccar WebSocket was assumed to always be up, so polling
+  // was only a distant backstop. In practice the socket drops often on
+  // mobile (network handover, background, battery saver) and the map
+  // then went up to five minutes stale while the collar reported every
+  // 10s. TraccarProvider now runs a 30s degraded poller whenever the
+  // socket is down; this value is the screen-level backstop on top of
+  // that, so it no longer needs to be a five-minute gamble.
+  static const int normalUpdateIntervalSeconds = 60; // 1 minute
   static const int liveUpdateIntervalSeconds = 10; // 10 seconds
   static const int batteryLowThreshold = 20; // 20%
   
