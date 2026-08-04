@@ -110,8 +110,15 @@ class _HomeZoneSetupWizardState extends State<HomeZoneSetupWizard> {
   bool _submittingMode8 = false;
   bool _queuedForWake = false;
 
-  // Fixed radius (design dropped the slider, recommendation: 70m default).
-  static const int _radiusMeters = 70;
+  // Fixed radius (design dropped the slider). 70m until 2026-08-03,
+  // lowered to 40m after a real case: a ~30-min neighborhood walk never
+  // left the collar's home bubble (home WiFi reach + wide geofence), so
+  // MODE 8 slept through the whole walk and reported nothing. 40m keeps
+  // a safety margin over the device minimum (30m per the Mictrack GEO
+  // range) while making "left the house" trip at the corner, not three
+  // blocks away. Existing zones keep their radius; this only affects
+  // new setups (re-running the wizard re-writes it).
+  static const int _radiusMeters = 40;
 
   // Step numbers for the progress bar (1..5; denied uses 0/0 fallback).
   int _stepNumber(_Step s) => switch (s) {
