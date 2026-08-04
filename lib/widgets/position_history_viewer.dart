@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
+import '../utils/constants.dart';
 import '../models/position.dart';
 
 /// Widget to display position history timeline
@@ -136,11 +138,14 @@ class _PositionHistoryViewerState extends State<PositionHistoryViewer> {
             ),
             const SizedBox(width: 12),
 
-            // Time
+            // Date + time. The date was added 2026-07-31 on customer
+            // request ("recomiendo también mostrar la fecha") — a history
+            // list of bare HH:mm is ambiguous once it spans days.
             SizedBox(
-              width: 50,
+              width: 62,
               child: Text(
-                DateFormat('HH:mm').format(position.deviceTime),
+                '${DateFormat('dd/MM').format(position.deviceTime)}\n'
+                '${DateFormat('HH:mm').format(position.deviceTime)}',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -182,7 +187,7 @@ class _PositionHistoryViewerState extends State<PositionHistoryViewer> {
                         Icon(Icons.battery_std, size: 12, color: Colors.grey[600]),
                         const SizedBox(width: 4),
                         Text(
-                          '${position.batteryLevel}%',
+                          BatteryDisplay.label(position.batteryLevel),
                           style: TextStyle(
                             fontSize: 10,
                             color: Colors.grey[600],

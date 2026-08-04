@@ -74,3 +74,29 @@ class AppConstants {
   static const double defaultLatitude = 4.6097; // Bogotá
   static const double defaultLongitude = -74.0817;
 }
+
+/// Battery display helper.
+///
+/// The gateway converts the collar's voltage to a percentage with
+/// Mictrack's published curve, whose FLOOR is 5% for anything under
+/// 3.40 V — the point where the modem can no longer transmit. So "5%"
+/// never means "a little charge left", it means the collar is done.
+///
+/// Customer report 2026-07-31: "cuando el dispositivo está en 5% ya no
+/// funciona". They were right: showing 5% implied there was still some
+/// runtime. We now say so plainly.
+class BatteryDisplay {
+  /// Below (and including) this the collar cannot transmit.
+  static const int emptyThreshold = 5;
+
+  static bool isEmpty(int? percent) =>
+      percent != null && percent <= emptyThreshold;
+
+  /// Human label: "Sin batería" at the floor, "NN%" otherwise, "—" when
+  /// we have no reading at all.
+  static String label(int? percent) {
+    if (percent == null) return '—';
+    if (isEmpty(percent)) return 'Sin batería';
+    return '$percent%';
+  }
+}

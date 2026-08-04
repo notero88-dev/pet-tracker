@@ -106,7 +106,7 @@ class TraccarApi {
             status: json['status'] ?? 'unknown',
             createdAt: DateTime.now(), // Traccar doesn't return this
             lastUpdate: json['lastUpdate'] != null
-                ? DateTime.parse(json['lastUpdate'])
+                ? DateTime.parse(json['lastUpdate']).toLocal()
                 : null,
           );
         }).toList();

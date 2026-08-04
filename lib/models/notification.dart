@@ -28,7 +28,7 @@ class AppNotification {
       title: json['title'] as String,
       body: json['body'] as String,
       type: NotificationType.fromString(json['type'] as String),
-      timestamp: DateTime.parse(json['timestamp'] as String),
+      timestamp: DateTime.parse(json['timestamp'] as String).toLocal(),
       isRead: json['isRead'] as bool? ?? false,
       data: json['data'] as Map<String, dynamic>?,
       deviceId: json['deviceId'] as String?,

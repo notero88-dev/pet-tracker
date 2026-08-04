@@ -23,7 +23,7 @@ class TraccarEvent {
       id: json['id'] as int,
       deviceId: json['deviceId'] as int,
       type: json['type'] as String,
-      eventTime: DateTime.parse(json['eventTime'] as String),
+      eventTime: DateTime.parse(json['eventTime'] as String).toLocal(),
       geofenceId: json['geofenceId'] as int?,
       positionId: json['positionId'] as int?,
       attributes: json['attributes'] as Map<String, dynamic>?,
