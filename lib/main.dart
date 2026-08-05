@@ -193,6 +193,26 @@ class _PetTrackAppState extends State<PetTrackApp> with WidgetsBindingObserver {
       // stuck "purchasing" state. See SubscriptionProvider.handleAppResumed
       // for the full rationale.
       _subscriptionProvider.handleAppResumed();
+
+      // Re-register the FCM token on every foreground.
+      //
+      // Until 2026-08-04 registration ran only once, on the post-login
+      // root. Anything that made that single attempt fail left the
+      // account permanently unreachable — no geofence alerts, no
+      // battery alerts, and nothing on screen to suggest it. Five of
+      // twelve live accounts were found in that state; the trigger was
+      // a real customer whose exit alert was generated server-side and
+      // never sent because his row had no token.
+      //
+      // Foreground is the right hook because it covers every recovery
+      // path we can't otherwise reach: the user granting permission in
+      // OS Settings (which fires no app callback), iOS handing over the
+      // APNs token after our bounded wait gave up, a token rotation,
+      // and the server-side race where the token arrived before the
+      // customer row existed. The call is idempotent and cheap — one
+      // request when the token is unchanged — and no-ops when the user
+      // hasn't granted permission.
+      unawaited(_fcm.requestPermissionAndRegister());
     }
   }
 
