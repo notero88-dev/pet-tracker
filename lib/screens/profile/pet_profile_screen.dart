@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../models/device.dart';
+import '../../services/firestore_service.dart';
 import '../../utils/petti_theme.dart';
 import '../../widgets/petti/petti_primitives.dart';
 
@@ -34,16 +35,61 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
   File? _petPhoto;
   bool _isLoading = false;
 
+  // Firestore pet doc backing this form. Null until _loadPet resolves,
+  // or permanently null if this device has no pet doc (shouldn't happen
+  // post-provision, but the screen must not lie about saving if it does).
+  String? _petId;
+  String? _existingPhotoUrl;
+  bool _isLoadingPet = true;
+
   final ImagePicker _picker = ImagePicker();
+  final FirestoreService _firestore = FirestoreService();
 
   @override
   void initState() {
     super.initState();
+    // Seed the name from the Traccar device only as a placeholder — it
+    // reads "Joshi's Tracker", not the pet's name. _loadPet overwrites it
+    // with the real value the user chose during onboarding.
     _petNameController = TextEditingController(text: widget.device.name);
     _breedController = TextEditingController();
     _weightController = TextEditingController();
     _notesController = TextEditingController();
-    // TODO: load pet data from Firestore.
+    _loadPet();
+  }
+
+  /// Load the pet doc for this device so the form shows what the user
+  /// actually saved. Until 2026-08-04 this was a TODO: every field
+  /// rendered empty and the name showed the auto-generated device name,
+  /// so the screen looked like it had lost the user's data.
+  Future<void> _loadPet() async {
+    try {
+      final pets = await _firestore.getUserPets();
+      final match = pets.firstWhere(
+        (p) => p['traccarDeviceId'] == widget.device.traccarId,
+        orElse: () => const <String, dynamic>{},
+      );
+      if (!mounted) return;
+      if (match.isEmpty) {
+        setState(() => _isLoadingPet = false);
+        return;
+      }
+      setState(() {
+        _petId = match['id'] as String?;
+        final name = (match['name'] as String?)?.trim();
+        if (name != null && name.isNotEmpty) _petNameController.text = name;
+        _breedController.text = (match['breed'] as String?) ?? '';
+        final weight = match['weight'];
+        _weightController.text = weight == null ? '' : '$weight';
+        _notesController.text = (match['notes'] as String?) ?? '';
+        final type = match['type'] as String?;
+        if (type == 'dog' || type == 'cat' || type == 'other') _petType = type!;
+        _existingPhotoUrl = match['photoUrl'] as String?;
+        _isLoadingPet = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingPet = false);
+    }
   }
 
   @override
@@ -63,7 +109,7 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
         title: const Text('Perfil de mascota'),
         actions: [
           TextButton(
-            onPressed: _isLoading ? null : _saveProfile,
+            onPressed: (_isLoading || _isLoadingPet) ? null : _saveProfile,
             child: const Text('Guardar'),
           ),
           const SizedBox(width: PettiSpacing.s2),
@@ -179,7 +225,7 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
               const SizedBox(height: PettiSpacing.s6),
 
               ElevatedButton(
-                onPressed: _isLoading ? null : _saveProfile,
+                onPressed: (_isLoading || _isLoadingPet) ? null : _saveProfile,
                 child: _isLoading
                     ? const SizedBox(
                         width: 22,
@@ -298,22 +344,57 @@ class _PetProfileScreenState extends State<PetProfileScreen> {
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // No pet doc = nothing to write to. Say so instead of showing the
+    // success toast; the old code claimed success unconditionally.
+    if (_petId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No pudimos encontrar el perfil de tu mascota. '
+              'Cierra y vuelve a abrir esta pantalla.'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
-      // TODO: Save pet profile to Firestore + upload photo to Storage.
-      await Future.delayed(const Duration(seconds: 1));
+      // Photo first: if the upload fails we keep the previous URL rather
+      // than clearing a photo the user already had.
+      String? photoUrl = _existingPhotoUrl;
+      if (_petPhoto != null) {
+        final uploaded = await _firestore.uploadPetPhoto(_petPhoto!);
+        if (uploaded != null) photoUrl = uploaded;
+      }
+
+      final weightText = _weightController.text.trim().replaceAll(',', '.');
+      await _firestore.updatePet(_petId!, {
+        'name': _petNameController.text.trim(),
+        'type': _petType,
+        'breed': _emptyToNull(_breedController.text),
+        'weight': weightText.isEmpty ? null : double.tryParse(weightText),
+        'notes': _emptyToNull(_notesController.text),
+        if (photoUrl != null) 'photoUrl': photoUrl,
+      });
+
       if (!mounted) return;
+      setState(() => _existingPhotoUrl = photoUrl);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Perfil de mascota actualizado')),
       );
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        SnackBar(content: Text('No pudimos guardar los cambios: $e')),
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  static String? _emptyToNull(String v) {
+    final t = v.trim();
+    return t.isEmpty ? null : t;
   }
 }
