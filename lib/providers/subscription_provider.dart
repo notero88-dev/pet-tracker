@@ -25,6 +25,7 @@
 
 import 'dart:async';
 
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 
@@ -279,23 +280,76 @@ class SubscriptionProvider extends ChangeNotifier {
       final available = await _iap.isAvailable();
       if (!available) {
         if (kDebugMode) debugPrint('SubscriptionProvider: IAP not available on this device');
+        _reportProductUnavailable(reason: 'billing_unavailable', billingAvailable: false);
         return;
       }
       final resp = await _iap.queryProductDetails({kMonthlyProductId});
-      if (resp.notFoundIDs.isNotEmpty) {
-        if (kDebugMode) {
-          debugPrint(
-            'SubscriptionProvider: product not found in store: ${resp.notFoundIDs}',
-          );
-        }
-      }
       if (resp.productDetails.isNotEmpty) {
         _product = resp.productDetails.first;
         notifyListeners();
+        return;
       }
-    } catch (e) {
+      // Product did NOT come back — this is the root cause of the
+      // "Producto no disponible" paywall error. Capture WHY remotely so
+      // we can diagnose without the affected user reporting it. The two
+      // usual culprits: store-config (product/base-plan not active → the
+      // id lands in notFoundIDs) vs a per-account country mismatch (the
+      // product is Colombia-only → an out-of-country Play account gets an
+      // empty catalog). device_country in the payload separates them.
+      if (kDebugMode) {
+        debugPrint('SubscriptionProvider: product not found in store: ${resp.notFoundIDs}');
+      }
+      _reportProductUnavailable(
+        reason: resp.notFoundIDs.contains(kMonthlyProductId)
+            ? 'product_not_found'
+            : 'empty_product_details',
+        billingAvailable: true,
+        notFoundIds: resp.notFoundIDs,
+      );
+    } catch (e, stack) {
       if (kDebugMode) debugPrint('SubscriptionProvider: fetchProducts failed: $e');
+      _reportProductUnavailable(reason: 'query_exception', error: e, stack: stack);
     }
+  }
+
+  /// Emit telemetry when the paywall product fails to load / a user taps
+  /// buy with no product resolved. Before this, the "Producto no
+  /// disponible" failure was invisible operator-side: it never reaches
+  /// our backend (a product query is app<->store only) and wasn't
+  /// tracked, so we could only debug it by asking the affected user.
+  ///
+  /// Lands the event in BOTH Amplitude (funnel/segmentation) and
+  /// Crashlytics (non-fatal, stack-attached), with enough context to
+  /// distinguish a store-config problem from a per-account country
+  /// mismatch: billing availability, the notFoundIDs list, and the
+  /// device's country/language.
+  void _reportProductUnavailable({
+    required String reason,
+    bool? billingAvailable,
+    List<String>? notFoundIds,
+    Object? error,
+    StackTrace? stack,
+  }) {
+    final locale = PlatformDispatcher.instance.locale;
+    final props = <String, dynamic>{
+      'reason': reason,
+      'queried_product_id': kMonthlyProductId,
+      'platform': _platformProvider(),
+      'billing_available': billingAvailable,
+      'not_found_ids': notFoundIds,
+      'device_country': locale.countryCode,
+      'device_language': locale.languageCode,
+      if (error != null) 'error': error.toString(),
+    };
+    AmplitudeService.instance.track('Paywall Product Unavailable', properties: props);
+    FirebaseCrashlytics.instance.recordError(
+      error ?? StateError('paywall product unavailable: $reason'),
+      stack,
+      reason: 'Paywall product unavailable ($reason) — '
+          'country=${locale.countryCode} platform=${_platformProvider()} '
+          'notFound=$notFoundIds',
+      fatal: false,
+    );
   }
 
   /// Triggers the IAP sheet. Returns when the sheet dismisses (the
@@ -304,6 +358,10 @@ class SubscriptionProvider extends ChangeNotifier {
     final product = _product;
     if (product == null) {
       _lastError = 'Producto no disponible. Reintenta en unos segundos.';
+      // Highest-signal moment: the user actually tapped "Empezar prueba
+      // gratis" and hit the wall. Report it (distinct reason) so it shows
+      // up as a real blocked conversion, not just a background fetch miss.
+      _reportProductUnavailable(reason: 'cta_tapped_no_product');
       notifyListeners();
       return;
     }
