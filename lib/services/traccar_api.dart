@@ -89,10 +89,15 @@ class TraccarApi {
   /// Get all devices for current user
   Future<List<Device>> getDevices() async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/devices'),
-        headers: _headers,
-      );
+      // Timeout: on flaky cellular a hung GET froze the map's refresh
+      // loop for minutes (the catch below never ran, the marker never
+      // repainted). 10 s is generous for a payload this small.
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/devices'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
@@ -150,10 +155,12 @@ class TraccarApi {
   /// Get last position for a device
   Future<Position?> getLastPosition(int deviceId) async {
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/positions?deviceId=$deviceId'),
-        headers: _headers,
-      );
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/positions?deviceId=$deviceId'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);
@@ -182,10 +189,13 @@ class TraccarApi {
       final fromStr = from.toUtc().toIso8601String();
       final toStr = to.toUtc().toIso8601String();
       
-      final response = await http.get(
-        Uri.parse('$baseUrl/positions?deviceId=$deviceId&from=$fromStr&to=$toStr'),
-        headers: _headers,
-      );
+      final response = await http
+          .get(
+            Uri.parse(
+                '$baseUrl/positions?deviceId=$deviceId&from=$fromStr&to=$toStr'),
+            headers: _headers,
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final List data = jsonDecode(response.body);

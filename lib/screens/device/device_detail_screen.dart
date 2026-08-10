@@ -78,7 +78,13 @@ class DeviceDetailScreen extends StatefulWidget {
   State<DeviceDetailScreen> createState() => _DeviceDetailScreenState();
 }
 
-class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
+class _DeviceDetailScreenState extends State<DeviceDetailScreen>
+    with WidgetsBindingObserver {
+  /// Provider handle kept for listener add/remove symmetry — dispose()
+  /// runs after the element is deactivated, when Provider.of() lookups
+  /// are no longer allowed.
+  TraccarProvider? _traccarListenable;
+
   GoogleMapController? _mapController;
   Timer? _updateTimer;
   bool _isLiveMode = false;
@@ -162,9 +168,52 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Repaint the marker whenever the provider learns a new position
+    // (WebSocket push or degraded-mode poll). Before this the pin only
+    // moved on this screen's own 60 s REST timer, so a fresh position
+    // could sit in the provider cache for up to a minute while the map
+    // still showed the old spot.
+    _traccarListenable = Provider.of<TraccarProvider>(context, listen: false);
+    _traccarListenable!.addListener(_onProviderPositionUpdate);
     _loadCurrentPosition();
     _startNormalUpdates();
     _loadPetName();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // iOS suspends the app (and its timers) while the user walks with
+    // the phone in their pocket. On resume the map would show the
+    // pre-suspension position for up to 60 s until the next timer tick
+    // — refresh immediately instead. (Found live 2026-08-10: user left
+    // zone "oficina", arrived elsewhere, map still drew oficina while
+    // the history sheet — which queries the server directly — was
+    // already correct.)
+    if (state == AppLifecycleState.resumed && mounted) {
+      _refreshPosition();
+    }
+  }
+
+  /// Reads the provider's freshest cached position for this device and
+  /// repaints the marker if it's newer than what the map shows. Skipped
+  /// while the history sheet is open so history markers stay stable.
+  void _onProviderPositionUpdate() {
+    if (!mounted || _showHistory) return;
+    final traccarId = widget.device.traccarId;
+    if (traccarId == null) return;
+    final position = _traccarListenable?.getLastPosition(traccarId);
+    if (position == null) return;
+    final current = _currentPosition;
+    if (current != null &&
+        !position.deviceTime.isAfter(current.deviceTime)) {
+      return; // nothing newer than what's already drawn
+    }
+    setState(() {
+      _currentPosition = position;
+      _updateMarker(position);
+    });
+    _resolveNearestPlace(position);
   }
 
   /// Resolve the Firestore pet name for this device. Best-effort — any
@@ -189,6 +238,8 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _traccarListenable?.removeListener(_onProviderPositionUpdate);
     _updateTimer?.cancel();
     _queuedTimeoutTimer?.cancel();
     _commandEventsSub?.cancel();
