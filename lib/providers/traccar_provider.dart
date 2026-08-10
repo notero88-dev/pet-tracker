@@ -481,6 +481,10 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
         radiusMeters: radiusMeters,
       );
       await loadGeofences();
+      // The map screen reads the per-IMEI cache (zonesForImei) and only
+      // fetches when that cache is EMPTY — without this refresh a newly
+      // created zone never shows on the map until app restart.
+      await loadZonesForImei(imei);
       return id;
     } on ZoneApiException catch (e) {
       _errorMessage = e.message;
@@ -508,6 +512,7 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
         points: points,
       );
       await loadGeofences();
+      await loadZonesForImei(imei);
       return id;
     } on ZoneApiException catch (e) {
       _errorMessage = e.message;
@@ -635,6 +640,7 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
     try {
       await _zonesApi.deleteZone(imei: imei, traccarGeofenceId: geofenceId);
       _geofences.removeWhere((g) => g.id == geofenceId);
+      _zonesByImei[imei]?.removeWhere((g) => g.id == geofenceId);
       notifyListeners();
       return true;
     } on ZoneApiException catch (e) {
@@ -683,6 +689,7 @@ class TraccarProvider with ChangeNotifier, WidgetsBindingObserver {
         );
       }
       await loadGeofences();
+      await loadZonesForImei(imei);
       return true;
     } on ZoneApiException catch (e) {
       _errorMessage = e.message;

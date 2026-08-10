@@ -1180,13 +1180,18 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
           IconButton(
             icon: const Icon(Icons.shield_outlined),
             tooltip: 'Zonas seguras',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    GeofenceListScreen(device: widget.device),
-              ),
-            ),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      GeofenceListScreen(device: widget.device),
+                ),
+              );
+              // Zones may have been created/edited/deleted while away;
+              // redraw the overlays from the (now refreshed) cache.
+              if (mounted) _loadGeofenceCircles();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
