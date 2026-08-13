@@ -84,6 +84,19 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   bool _isLiveMode = false;
   bool _showHistory = false;
   bool _isFlippingMode = false; // true while a Mode 1/8 command is in flight
+
+  /// When the user last turned En vivo ON. Used to tell "the collar has
+  /// started streaming" from "we asked and are still waiting": a position
+  /// whose deviceTime is after this instant can only have come from the
+  /// new live cadence. Null whenever En vivo is off.
+  ///
+  /// 2026-08-13 field test: the map header said EN VIVO while the row
+  /// underneath still said "se activará cuando se mueva" — and it said it
+  /// forever, because the line was rendered on `_isLiveMode` alone with
+  /// no notion of whether the collar had actually complied. Measured
+  /// activation was 27 s and 39 s on two runs, so the honest sequence is
+  /// "activando" -> "activo", not a permanent "waiting".
+  DateTime? _liveModeEnabledAt;
   late final ProvisioningApi _api = ProvisioningApi();
 
   // 2026-05-15 — En vivo "Bad file descriptor" fix.
@@ -158,6 +171,55 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   /// name (fallback during loading or if Firestore has no matching pet).
   String get _displayName =>
       _petName?.isNotEmpty == true ? _petName! : widget.device.name;
+
+  /// A live position is one the collar produced AFTER we asked for En
+  /// vivo. Comparing against [_liveModeEnabledAt] rather than "is this
+  /// position recent" matters because Mode 8 is still delivering its own
+  /// 60 s fixes while the LOCK command is in flight — one of those would
+  /// otherwise be mistaken for the live stream having started.
+  bool get _liveStreamStarted {
+    final since = _liveModeEnabledAt;
+    final pos = _currentPosition;
+    if (since == null || pos == null) return false;
+    return pos.deviceTime.isAfter(since);
+  }
+
+  /// How stale the newest position is allowed to be before we stop
+  /// claiming the stream is healthy. Live cadence is 10 s; three missed
+  /// beats is a real interruption rather than jitter.
+  ///
+  /// This state is not hypothetical: during the 2026-08-13 test the
+  /// collar's TCP session dropped three times (ECONNRESET/ETIMEDOUT, the
+  /// roaming SIM hopping carriers) and left gaps of 1 min 26 s and
+  /// 2 min 44 s. Saying "actualizando cada 10 segundos" through a gap
+  /// like that would just be a smaller lie than the one being fixed.
+  static const Duration _liveStreamStaleAfter = Duration(seconds: 45);
+
+  /// The status line under the En vivo button. Four honest states.
+  String get _liveStatusLine {
+    // Queued: the collar was asleep/offline when the user tapped, so the
+    // command sits in the gateway queue until it reconnects. This is the
+    // ONLY case where the original "cuando se mueva" wording is true.
+    if (_pendingQueueId != null) {
+      return 'El modo de búsqueda se activará cuando $_displayName se mueva.';
+    }
+    if (!_liveStreamStarted) {
+      return 'Activando modo búsqueda… puede tardar hasta 1 minuto.';
+    }
+    final age = DateTime.now().difference(_currentPosition!.deviceTime);
+    if (age > _liveStreamStaleAfter) {
+      return 'Buscando señal del collar… última ubicación hace '
+          '${_formatAge(age)}.';
+    }
+    return 'En vivo activo — actualizando cada '
+        '${AppConstants.liveUpdateIntervalSeconds} segundos.';
+  }
+
+  /// Compact age for the status line: "35 s", "2 min".
+  static String _formatAge(Duration d) {
+    if (d.inMinutes < 1) return '${d.inSeconds} s';
+    return '${d.inMinutes} min';
+  }
 
   @override
   void initState() {
@@ -605,7 +667,10 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
       }
 
       // Device confirmed. Flip UI state + adjust polling cadence to match.
-      setState(() => _isLiveMode = enabling);
+      setState(() {
+        _isLiveMode = enabling;
+        _liveModeEnabledAt = enabling ? DateTime.now() : null;
+      });
       if (enabling) {
         _startLiveUpdates();
         final traccar = Provider.of<TraccarProvider>(context, listen: false);
@@ -659,6 +724,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
     setState(() {
       _isLiveMode = true;
       _isFlippingMode = false;
+      _liveModeEnabledAt = DateTime.now();
     });
     _startLiveUpdates();
     final traccar = Provider.of<TraccarProvider>(context, listen: false);
@@ -816,15 +882,17 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
   void _showModeFlipSuccess(bool enabling) {
     final name = _displayName;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      // We optimistically flipped _isLiveMode on a 200 from the API, but the
-      // 200 just means the command was dispatched (TCP queue or SMS) — the
-      // device itself only acks on its next wake cycle (motion or scheduled
-      // poll). Reflect that honestly so the user doesn't think Mode 1 is
-      // already live and decide the device is broken when they don't see
-      // a fresh position right away.
+      // Reached only after the collar ACKed the command, so it is already
+      // awake and switching — it does NOT need to move first.
+      //
+      // 2026-08-13: this used to say "entrará en modo búsqueda cuando se
+      // mueva" on this path too, which contradicted the EN VIVO pill the
+      // user was looking at and understated us: measured activation was
+      // 27 s and 39 s. The "cuando se mueva" wording now lives only where
+      // it is true — the queued/offline path, in _liveStatusLine.
       content: Text(
         enabling
-            ? 'Solicitud enviada. $name entrará en modo búsqueda cuando se mueva.'
+            ? 'Modo búsqueda activado. $name empezará a actualizar en menos de un minuto.'
             : '$name volverá a modo casa cuando se mueva.',
       ),
       backgroundColor: enabling ? PettiColors.alert : PettiColors.sabana,
@@ -1373,8 +1441,7 @@ class _DeviceDetailScreenState extends State<DeviceDetailScreen> {
                   const SizedBox(width: PettiSpacing.s1),
                   Expanded(
                     child: Text(
-                      'El modo de búsqueda se activará cuando '
-                      '$_displayName se mueva.',
+                      _liveStatusLine,
                       style: PettiText.bodySm().copyWith(
                         color: PettiColors.fgDim,
                       ),

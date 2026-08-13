@@ -52,8 +52,11 @@ void main() {
   });
 
   group('BatteryDisplay', () {
-    test('the 5% floor reads as "Sin batería", not a percentage', () {
-      expect(BatteryDisplay.label(5), 'Sin batería');
+    // "Sin batería" until 2026-08-13: it reads in Spanish as "no battery
+    // fitted" as easily as "the battery ran out", and the founder read it
+    // the wrong way during a field test. "Agotada" only has one meaning.
+    test('the 5% floor reads as "Batería agotada", not a percentage', () {
+      expect(BatteryDisplay.label(5), 'Batería agotada');
       expect(BatteryDisplay.isEmpty(5), isTrue);
     });
 

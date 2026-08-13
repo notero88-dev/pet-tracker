@@ -100,11 +100,16 @@ class BatteryDisplay {
   static bool isEmpty(int? percent) =>
       percent != null && percent <= emptyThreshold;
 
-  /// Human label: "Sin batería" at the floor, "NN%" otherwise, "—" when
-  /// we have no reading at all.
+  /// Human label: "Batería agotada" at the floor, "NN%" otherwise, "—"
+  /// when we have no reading at all.
+  ///
+  /// 2026-08-13: was "Sin batería", which in Spanish reads ambiguously as
+  /// "no battery fitted" rather than "the battery ran out" — the founder
+  /// hit exactly that reading during a field test. "Agotada" can only
+  /// mean drained.
   static String label(int? percent) {
     if (percent == null) return '—';
-    if (isEmpty(percent)) return 'Sin batería';
+    if (isEmpty(percent)) return 'Batería agotada';
     return '$percent%';
   }
 }
